@@ -1,0 +1,27 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "cStandard": "c17",
+            "cppStandard": "c++20",
+            "intelliSenseMode": "linux-gcc-x64",
+            "includePath": [
+                "${workspaceFolder}/Core/include",
+                "${workspaceFolder}/Backend/src",
+                "${workspaceFolder}/Graphics/include",
+                "${workspaceFolder}/Scene/include",
+                "${workspaceFolder}/Windowing/GLFW/include/",
+                "${workspaceFolder}/vendor/glfw/include",
+                "${workspaceFolder}/vendor/stb/stb/",
+                "${workspaceFolder}/vendor/glm/",
+                "${workspaceFolder}/vendor/volk",
+                "${workspaceFolder}/vendor/VulkanMemoryAllocator/include"
+            ],
+            "defines": [
+                "VK_NO_PROTOTYPES"
+            ]
+        }
+    ],
+    "version": 4
+}

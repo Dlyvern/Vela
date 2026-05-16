@@ -1,0 +1,5 @@
+
+add_library(VelaGLFW STATIC include/Vela/Windowing/GLFWWindowBackend.hpp src/GLFWWindowBackend.cpp)
+target_include_directories(VelaGLFW PUBLIC include) 
+target_link_libraries(VelaGLFW PUBLIC VelaCore PRIVATE glfw)
+add_library(Vela::GLFW ALIAS VelaGLFW)

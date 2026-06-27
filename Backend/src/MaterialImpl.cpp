@@ -5,8 +5,9 @@
 #include "Vela/Graphics/Vertex.hpp"
 
 #include <cstring>
+#include <vulkan/vulkan_core.h>
 
-struct MVP { glm::mat4 model, view, projection; };
+struct CameraUBO { glm::mat4 view, projection; };
 
 namespace vela::backend
 {
@@ -55,7 +56,7 @@ namespace vela::backend
         if(VkResult result = vkAllocateDescriptorSets(m_device, &descriptorSetAI, &m_descriptorSet); result != VK_SUCCESS)
             throw std::runtime_error("Failed to allocate descriptor sets");
 
-        VkDeviceSize imageSize = sizeof(MVP);
+        VkDeviceSize imageSize = sizeof(CameraUBO);
 
         VkBufferCreateInfo mvpBufferCI{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
         mvpBufferCI.size = imageSize;
@@ -78,7 +79,7 @@ namespace vela::backend
         VkDescriptorBufferInfo bufInfo{};
         bufInfo.buffer = m_mvpBuffer;
         bufInfo.offset = 0;
-        bufInfo.range = sizeof(MVP);
+        bufInfo.range = sizeof(CameraUBO);
 
         VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
         write.dstSet = m_descriptorSet;
@@ -94,12 +95,17 @@ namespace vela::backend
         
         auto vertShader = createShaderModule(m_device, vertCode);
         auto fragShader = createShaderModule(m_device, fragCode);
-        
+
+        VkPushConstantRange modelPushConstant{};
+        modelPushConstant.size = sizeof(glm::mat4);
+        modelPushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        modelPushConstant.offset = 0;
+
         VkPipelineLayoutCreateInfo pipelineLayoutCI{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         pipelineLayoutCI.setLayoutCount = 1;
         pipelineLayoutCI.pSetLayouts = &m_descriptorSetLayout;
-        pipelineLayoutCI.pPushConstantRanges = 0;
-        pipelineLayoutCI.pPushConstantRanges = nullptr;
+        pipelineLayoutCI.pushConstantRangeCount = 1;
+        pipelineLayoutCI.pPushConstantRanges = &modelPushConstant;
 
         if(VkResult result = vkCreatePipelineLayout(m_device, &pipelineLayoutCI, nullptr, &m_pipelineLayout); result != VK_SUCCESS)
             throw std::runtime_error("Failed to create pipeline layout");
@@ -116,21 +122,37 @@ namespace vela::backend
 
         VkPipelineShaderStageCreateInfo shaderStageCI[] = { vertStageCI, fragStageCI };
 
+        // VkVertexInputBindingDescription binding{};
+        // binding.binding = 0;
+        // binding.stride = sizeof(vela::graphics::SpriteVertex);
+        // binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        // std::vector<VkVertexInputAttributeDescription> posAttr(2);
+        // posAttr[0].binding = 0;
+        // posAttr[0].location = 0;                  
+        // posAttr[0].format = VK_FORMAT_R32G32_SFLOAT;
+        // posAttr[0].offset = offsetof(graphics::SpriteVertex, position);
+
+        // posAttr[1].binding = 0;
+        // posAttr[1].location = 1;                  
+        // posAttr[1].format = VK_FORMAT_R32G32_SFLOAT;
+        // posAttr[1].offset = offsetof(graphics::SpriteVertex, uv);
+
         VkVertexInputBindingDescription binding{};
         binding.binding = 0;
-        binding.stride = sizeof(vela::graphics::Vertex);
+        binding.stride = sizeof(vela::graphics::StaticVertex);
         binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
         std::vector<VkVertexInputAttributeDescription> posAttr(2);
         posAttr[0].binding = 0;
         posAttr[0].location = 0;                  
-        posAttr[0].format = VK_FORMAT_R32G32_SFLOAT;
-        posAttr[0].offset = offsetof(graphics::Vertex, position);
+        posAttr[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+        posAttr[0].offset = offsetof(graphics::StaticVertex, position);
 
         posAttr[1].binding = 0;
         posAttr[1].location = 1;                  
         posAttr[1].format = VK_FORMAT_R32G32_SFLOAT;
-        posAttr[1].offset = offsetof(graphics::Vertex, uv);
+        posAttr[1].offset = offsetof(graphics::StaticVertex, uv);
 
         VkPipelineVertexInputStateCreateInfo vertexInput{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
         vertexInput.vertexBindingDescriptionCount = 1;
@@ -169,6 +191,18 @@ namespace vela::backend
         dynamicState.dynamicStateCount = 2;
         dynamicState.pDynamicStates = dynamicStates;
 
+        VkFormat colorFormat = context.impl()->getSwapchainFormat();
+
+        VkPipelineRenderingCreateInfo renderingCI{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
+        renderingCI.colorAttachmentCount = 1;
+        renderingCI.pColorAttachmentFormats = &colorFormat;
+        renderingCI.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
+
+        VkPipelineDepthStencilStateCreateInfo depthCI{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+        depthCI.depthTestEnable = VK_TRUE;
+        depthCI.depthWriteEnable = VK_TRUE;
+        depthCI.depthCompareOp = VK_COMPARE_OP_LESS;
+
         VkGraphicsPipelineCreateInfo pipelineCI{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
         pipelineCI.stageCount = 2;
         pipelineCI.pStages = shaderStageCI;
@@ -180,7 +214,9 @@ namespace vela::backend
         pipelineCI.pColorBlendState = &colorBlend;
         pipelineCI.pDynamicState = &dynamicState;
         pipelineCI.layout = m_pipelineLayout;
-        pipelineCI.renderPass = context.impl()->getRenderPass();
+        pipelineCI.pNext = &renderingCI;
+        pipelineCI.pDepthStencilState = &depthCI;
+        pipelineCI.renderPass = VK_NULL_HANDLE;
         pipelineCI.subpass = 0;
 
         if (VkResult result = vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineCI, nullptr, &m_pipeline); result != VK_SUCCESS)
@@ -190,10 +226,10 @@ namespace vela::backend
         vkDestroyShaderModule(m_device, fragShader, nullptr);
     }
 
-    void MaterialImpl::setMVP(const glm::mat4& model, const glm::mat4& view, const glm::mat4& projection)
+    void MaterialImpl::setMVP(const glm::mat4& view, const glm::mat4& projection)
     {
-        MVP mvp{ model, view, projection };
-        std::memcpy(m_mvpMapped, &mvp, sizeof(MVP));
+        CameraUBO mvp{view, projection };
+        std::memcpy(m_mvpMapped, &mvp, sizeof(CameraUBO));
     }
 
     void MaterialImpl::setAlbedoTexture(VkImageView imageView, VkSampler sampler)

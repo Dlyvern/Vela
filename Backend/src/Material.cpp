@@ -16,9 +16,9 @@ namespace vela::graphics
         m_impl->setAlbedoTexture(texture.impl()->getImageView(), texture.impl()->getSampler());
     }
 
-    void Material::setMVP(const glm::mat4& model, const glm::mat4& view, const glm::mat4& projection)
+    void Material::setMVP(const glm::mat4& view, const glm::mat4& projection)
     {
-        m_impl->setMVP(model, view, projection);;
+        m_impl->setMVP(view, projection);;
     }
 
     backend::MaterialImpl* Material::impl() const

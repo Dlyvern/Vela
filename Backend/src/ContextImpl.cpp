@@ -25,7 +25,6 @@ namespace vela::backend
         for (auto& imageView : m_swapchainImageViews) 
             vkDestroyImageView(m_device, imageView, nullptr);
 
-        vkDestroyRenderPass(m_device, m_renderPass, nullptr);
         vkDestroyCommandPool(m_device, m_commandPool, nullptr);
 
         vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
@@ -71,6 +70,9 @@ namespace vela::backend
             vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &caps);
         }
 
+        vkDestroyImageView(m_device, m_depthImageView, nullptr);
+        vmaDestroyImage(m_allocator, m_depthImage, m_depthImageAllocation);
+
         for (auto v  : m_swapchainImageViews) 
             vkDestroyImageView(m_device, v, nullptr);
 
@@ -80,6 +82,7 @@ namespace vela::backend
 
         createSwapchain();
         createSwapchainImageViews();
+        createDepthImage();
     }
 
     void ContextImpl::createCommandPool()
@@ -92,45 +95,9 @@ namespace vela::backend
             throw std::runtime_error("Failed to create command pool");
     }
 
-    void ContextImpl::createRenderPass()
+    VkFormat ContextImpl::getSwapchainFormat() const
     {
-        VkAttachmentDescription colorAttachment{};
-        colorAttachment.format = m_swapchainFormat;
-        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-        VkAttachmentReference colorRef{};
-        colorRef.attachment = 0;
-        colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-        VkSubpassDescription subpass{};
-        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;        
-        subpass.colorAttachmentCount = 1;
-        subpass.pColorAttachments = &colorRef;
-
-        VkSubpassDependency dep{};
-        dep.srcSubpass = VK_SUBPASS_EXTERNAL;
-        dep.dstSubpass = 0;
-        dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dep.srcAccessMask = 0;
-        dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-        VkRenderPassCreateInfo renderPassCI{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-        renderPassCI.attachmentCount = 1;
-        renderPassCI.pAttachments = &colorAttachment;
-        renderPassCI.subpassCount = 1;
-        renderPassCI.pSubpasses = &subpass;
-        renderPassCI.dependencyCount = 1;
-        renderPassCI.pDependencies = &dep;
-
-        if (VkResult result = vkCreateRenderPass(m_device, &renderPassCI, nullptr, &m_renderPass); result != VK_SUCCESS)
-            throw std::runtime_error("Failed to create render pass");
+        return m_swapchainFormat;
     }
 
     void ContextImpl::createSwapchain()
@@ -228,6 +195,39 @@ namespace vela::backend
         }
     }
 
+    void ContextImpl::createDepthImage()
+    {
+        VkImageCreateInfo imageCI{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        imageCI.imageType = VK_IMAGE_TYPE_2D;
+        imageCI.extent = {static_cast<uint32_t>(m_swapchainExtent.width), static_cast<uint32_t>(m_swapchainExtent.height), 1};
+        imageCI.mipLevels = 1;
+        imageCI.arrayLayers = 1;
+        imageCI.format = VK_FORMAT_D32_SFLOAT;
+        imageCI.tiling = VK_IMAGE_TILING_OPTIMAL; 
+        imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        imageCI.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
+        imageCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        VmaAllocationCreateInfo imageAllocCI{};
+        imageAllocCI.usage = VMA_MEMORY_USAGE_AUTO;
+
+        if (vmaCreateImage(m_allocator, &imageCI, &imageAllocCI, &m_depthImage, &m_depthImageAllocation, nullptr) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create depth image");
+
+        VkImageViewCreateInfo imageViewCI{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        imageViewCI.format = VK_FORMAT_D32_SFLOAT;
+        imageViewCI.image = m_depthImage;
+        imageViewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        imageViewCI.components = { VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+                      VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY };
+        imageViewCI.subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 };
+
+        if (VkResult result = vkCreateImageView(m_device, &imageViewCI, nullptr, &m_depthImageView);
+                result != VK_SUCCESS)
+            throw std::runtime_error("Failed to create image view");
+    }
+
     void ContextImpl::pickPhysicalDevice()
     {
         uint32_t physicalDevicesNum{0};
@@ -285,7 +285,12 @@ namespace vela::backend
             VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         };
 
+        VkPhysicalDeviceVulkan13Features features13{};
+        features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+        features13.dynamicRendering = VK_TRUE;
+
         VkDeviceCreateInfo deviceCI{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
+        deviceCI.pNext = &features13;
         deviceCI.queueCreateInfoCount = 1;
         deviceCI.pQueueCreateInfos = &queueCI;
         deviceCI.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
@@ -297,6 +302,16 @@ namespace vela::backend
         volkLoadDevice(m_device);
 
         vkGetDeviceQueue(m_device, m_graphicsFamily, 0, &m_graphicsQueue);
+    }
+
+    VkImage ContextImpl::getDepthImage() const
+    {
+        return m_depthImage;
+    }
+
+    VkImageView ContextImpl::getDepthImageView() const
+    {
+        return m_depthImageView;
     }
 
     VkExtent2D ContextImpl::getSwapchainExtent() const
@@ -322,11 +337,6 @@ namespace vela::backend
     VkCommandPool ContextImpl::getGraphicsCommandPool() const
     {
         return m_commandPool;
-    }
-
-    VkRenderPass ContextImpl::getRenderPass() const
-    {
-        return m_renderPass;
     }
 
     VkDevice ContextImpl::getDevice() const

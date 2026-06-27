@@ -3,9 +3,21 @@
 
 namespace vela::graphics
 {
-    struct Vertex
+    struct SpriteVertex
     {
         float position[2];
+        float uv[2];
+    };
+
+    struct StaticVertex
+    {
+        float position[3];
+        float uv[2];
+    };
+
+    struct SkinnedVertex
+    {
+        float position[3];
         float uv[2];
     };
 } //namespace vela::graphics

@@ -34,9 +34,9 @@ namespace vela::graphics
         m_impl->endFrame();
     }
 
-    void RenderGraph::draw(const graphics::Mesh& mesh, const graphics::Material& material)
+    void RenderGraph::draw(const graphics::Mesh& mesh, const graphics::Material& material, const glm::mat4& model)
     {
-        m_impl->draw(mesh, material);
+        m_impl->draw(mesh, material, model);
     }
 
     RenderGraph::~RenderGraph() = default;

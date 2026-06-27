@@ -5,9 +5,22 @@
     "cmake.configureArgs": [
         "-DVELA_BUILD_EXAMPLES=ON"
     ],
-    "C_Cpp.default.cppStandard": "c++20",
-    "C_Cpp.default.intelliSenseMode": "linux-gcc-x64",
-    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+
+    // Use clangd, not the Microsoft C/C++ extension, for IntelliSense.
+    // Two providers fighting over the same files cause the phantom
+    // "Use of undeclared identifier" / "cstddef not found" errors.
+    "C_Cpp.intelliSenseEngine": "disabled",
+
+    "clangd.arguments": [
+        "--background-index",
+        "--clang-tidy",
+        "--header-insertion=never",
+        "--completion-style=detailed",
+        "--query-driver=/usr/bin/g++,/usr/bin/gcc",
+        "--compile-commands-dir=${workspaceFolder}/build"
+    ],
+    "clangd.checkUpdates": true,
+
     "files.associations": {
         "*.hpp": "cpp",
         "*.inl": "cpp"

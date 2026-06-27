@@ -18,20 +18,24 @@ namespace vela::backend
 
         VkDevice getDevice() const;
         VkInstance getInstance() const;
-        VkRenderPass getRenderPass() const;
         VkCommandPool getGraphicsCommandPool() const;
         VmaAllocator getAllocator() const;
         VkQueue getGraphicsQueue() const;
         VkSwapchainKHR getSwapchain() const;
+
         const std::vector<VkImage>& getSwapchainImages() const;
         const std::vector<VkImageView>& getSwapchainImageViews() const;
+        VkImage getDepthImage() const;
+        VkImageView getDepthImageView() const;
+        
         VkExtent2D getSwapchainExtent() const;
+        VkFormat getSwapchainFormat() const;
 
         void pickPhysicalDevice();
         void createDevice();
         void createSwapchain();
         void createSwapchainImageViews();
-        void createRenderPass();
+        void createDepthImage();
         void createCommandPool();
         void createAllocator();
         void recreateSwapchain();
@@ -49,10 +53,13 @@ namespace vela::backend
         VkSwapchainKHR m_swapchain{VK_NULL_HANDLE};
         VkFormat m_swapchainFormat{VK_FORMAT_UNDEFINED};   
         VkExtent2D m_swapchainExtent{};
+
         std::vector<VkImage> m_swapchainImages;
         std::vector<VkImageView> m_swapchainImageViews;
 
-        VkRenderPass m_renderPass{VK_NULL_HANDLE};
+        VkImage m_depthImage{VK_NULL_HANDLE};
+        VmaAllocation m_depthImageAllocation{VK_NULL_HANDLE};
+        VkImageView m_depthImageView{VK_NULL_HANDLE};
 
         VkCommandPool m_commandPool{VK_NULL_HANDLE};
 

@@ -4,12 +4,11 @@
 #include "volk.h"
 #include "vk_mem_alloc.h"
 
-#include "Vela/Graphics/Mesh.hpp"
-#include "Vela/Graphics/Vertex.hpp"
-
+#include <cstddef>
+#include <cstdint>
 #include <span>
 
-namespace vela::core 
+namespace vela::core
 {
     class Context;
 } //namespace vela::core
@@ -19,7 +18,7 @@ namespace vela::backend
     class MeshImpl
     {
     public:
-        MeshImpl(core::Context& ctx, std::span<const graphics::Vertex> vertices);
+        MeshImpl(core::Context& ctx, std::span<const std::byte> vertexData, uint32_t vertexCount);
         ~MeshImpl();
 
         VkBuffer getBuffer() const { return m_buffer; }

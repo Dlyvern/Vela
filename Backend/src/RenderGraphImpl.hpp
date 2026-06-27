@@ -4,6 +4,7 @@
 #include "volk.h"
 
 #include <vector>
+#include <glm/mat4x4.hpp>
 
 namespace vela::core
 {
@@ -28,7 +29,7 @@ namespace vela::backend
 
         void beginPresentPass(float r, float g, float b, float a);
 
-        void draw(const graphics::Mesh& mesh, const graphics::Material& material);
+        void draw(const graphics::Mesh& mesh, const graphics::Material& material, const glm::mat4& model);
 
         void endRenderPass();
 
@@ -36,7 +37,6 @@ namespace vela::backend
 
     private:
         void recreateSwapchainResources();
-        void createFramebuffers();
 
         core::Context& m_context;
 
@@ -45,12 +45,9 @@ namespace vela::backend
         VkFence m_inFlightFence{VK_NULL_HANDLE};
 
         VkDevice m_device{VK_NULL_HANDLE};
-        VkRenderPass m_renderPass{VK_NULL_HANDLE};
         VkQueue m_graphicsQueue{VK_NULL_HANDLE};
 
         std::vector<VkCommandBuffer> m_commandBuffers;
-
-        std::vector<VkFramebuffer> m_framebuffers;
 
         bool m_isFrameValid{true};
 

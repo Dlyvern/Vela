@@ -2,6 +2,7 @@
 #define VELA_GRAPHICS_RENDER_GRAPH_HPP
 
 #include <memory>
+#include "glm/mat4x4.hpp"
 
 namespace vela::core
 {
@@ -36,7 +37,7 @@ namespace vela::graphics
 
         void beginFrame();
         void beginPresentPass(float r = 0.1f, float g = 0.2f, float b = 0.4f, float a = 1.0f);
-        void draw(const graphics::Mesh& mesh, const graphics::Material& material);
+        void draw(const graphics::Mesh& mesh, const graphics::Material& material, const glm::mat4& model);
         void endRenderPass();
         void endFrame();
 

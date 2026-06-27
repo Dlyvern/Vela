@@ -29,7 +29,7 @@ namespace vela::backend
         VkDescriptorSet getDescriptorSet() const;
 
         void setAlbedoTexture(VkImageView imageView, VkSampler sampler);
-        void setMVP(const glm::mat4& model, const glm::mat4& view, const glm::mat4& projection);
+        void setMVP(const glm::mat4& view, const glm::mat4& projection);
     private:
         static VkShaderModule createShaderModule(VkDevice device, const std::vector<char>& code);
 

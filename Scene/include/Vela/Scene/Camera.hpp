@@ -1,0 +1,69 @@
+#ifndef VELA_SCENE_CAMERA_HPP
+#define VELA_SCENE_CAMERA_HPP
+
+#include <glm/mat4x4.hpp>
+
+#include <memory>
+#include <cstdint>
+
+namespace vela::scene
+{
+    class Camera
+    {
+    public:
+        enum class ProjectionMode : uint8_t
+        {
+            PERSPECTIVE = 0,
+            ORTHOGRAPHIC = 1
+        };
+
+        Camera();
+
+        [[nodiscard]] glm::vec3 getPosition() const;
+        [[nodiscard]] glm::vec3 getForward() const;
+        [[nodiscard]] glm::vec3 getUp() const;
+        [[nodiscard]] glm::mat4 getViewMatrix() const;
+        [[nodiscard]] float getPitch() const;
+        [[nodiscard]] float getYaw() const;
+        [[nodiscard]] glm::mat4 getProjectionMatrix() const;
+
+        [[nodiscard]] float getFOV() const;
+        [[nodiscard]] float getNear() const;
+        [[nodiscard]] float getFar() const;
+        [[nodiscard]] float getAspect() const;
+        [[nodiscard]] ProjectionMode getProjectionMode() const;
+        [[nodiscard]] float getOrthographicSize() const;
+
+        void setYaw(float yaw);
+        void setPitch(float pitch);
+        void setPosition(const glm::vec3 &position);
+        void setFOV(float fov);
+        void setAspect(float aspect);
+        void setNear(float nearPlane);
+        void setFar(float farPlane);
+        void setProjectionMode(ProjectionMode mode);
+        void setOrthographicSize(float size);
+
+        void updateCameraVectors();
+
+        ~Camera() = default;
+
+    private:
+        glm::vec3 m_position{2.0f, 2.0f, 2.0f};
+        glm::vec3 m_up{glm::vec3(0.0f, 1.0f, 0.0f)};
+        glm::vec3 m_right{glm::vec3(0.0f, 1.0f, 0.0f)};
+        glm::vec3 m_forward{glm::vec3(0.0f, 0.0f, -1.0f)};
+
+        float m_yaw{-90.0f};
+        float m_pitch{0.0f};
+
+        float m_fov{60.0f};
+        float m_aspect{16.0f / 9.0f};
+        float m_near{0.1f};
+        float m_far{1000.0f};
+        float m_orthographicSize{10.0f};
+        ProjectionMode m_projectionMode{ProjectionMode::PERSPECTIVE};
+    };
+} //namespace vela::scene
+
+#endif //VELA_SCENE_CAMERA_HPP

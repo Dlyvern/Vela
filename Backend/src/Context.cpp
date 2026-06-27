@@ -26,8 +26,8 @@ namespace vela::core
         m_contextImpl->createAllocator();
         m_contextImpl->createSwapchain();
         m_contextImpl->createSwapchainImageViews();
-        m_contextImpl->createRenderPass();
         m_contextImpl->createCommandPool();
+        m_contextImpl->createDepthImage();
     }
 
     Context::Context(Context&&) noexcept = default;

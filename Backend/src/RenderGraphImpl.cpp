@@ -8,11 +8,12 @@
 #include "MeshImpl.hpp"
 #include "MaterialImpl.hpp"
 #include "ContextImpl.hpp"
+#include <vulkan/vulkan_core.h>
 
 namespace vela::backend
 {
-    RenderGraphImpl::RenderGraphImpl(core::Context& context) : m_device(context.impl()->getDevice()),
-    m_renderPass(context.impl()->getRenderPass()), m_graphicsQueue(context.impl()->getGraphicsQueue()), m_context(context)
+    RenderGraphImpl::RenderGraphImpl(core::Context& context) : m_device(context.impl()->getDevice()), 
+    m_graphicsQueue(context.impl()->getGraphicsQueue()), m_context(context)
     {
         VkSemaphoreCreateInfo semaphoreCI{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
         VkFenceCreateInfo fenceCI{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
@@ -35,29 +36,6 @@ namespace vela::backend
 
         if(VkResult result = vkAllocateCommandBuffers(m_device, &commandBufferAI, m_commandBuffers.data()); result != VK_SUCCESS)
             throw std::runtime_error("Failed to allocat command buffers");
-
-        createFramebuffers();
-    }
-
-    void RenderGraphImpl::createFramebuffers()
-    {
-        m_framebuffers.resize(m_context.impl()->getSwapchainImages().size());
-
-        for (size_t i = 0; i < m_context.impl()->getSwapchainImages().size(); ++i)
-        {
-            VkImageView attachments[] = { m_context.impl()->getSwapchainImageViews()[i] };
-
-            VkFramebufferCreateInfo framebufferCI{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-            framebufferCI.renderPass = m_renderPass;
-            framebufferCI.attachmentCount = 1;
-            framebufferCI.pAttachments = attachments;
-            framebufferCI.width = m_context.impl()->getSwapchainExtent().width;
-            framebufferCI.height = m_context.impl()->getSwapchainExtent().height;
-            framebufferCI.layers = 1;
-
-            if (vkCreateFramebuffer(m_device, &framebufferCI, nullptr, &m_framebuffers[i]) != VK_SUCCESS)
-                throw std::runtime_error("Failed to create framebuffer");
-        }
     }
 
     void RenderGraphImpl::beginFrame()
@@ -127,15 +105,26 @@ namespace vela::backend
 
         VkClearValue clearValue{{{r, g, b, a}}};
 
-        VkRenderPassBeginInfo renderPassBeginInfo{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-        renderPassBeginInfo.clearValueCount = 1;
-        renderPassBeginInfo.pClearValues = &clearValue;
-        renderPassBeginInfo.framebuffer = m_framebuffers[m_currentImageIndex];
-        renderPassBeginInfo.renderArea.offset = {0, 0};
-        renderPassBeginInfo.renderArea.extent = m_context.impl()->getSwapchainExtent();
-        renderPassBeginInfo.renderPass = m_renderPass;
+        VkRenderingAttachmentInfo colorAttachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+        colorAttachment.imageView = m_context.impl()->getSwapchainImageViews().at(m_currentImageIndex);
+        colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.clearValue = clearValue;
 
-        vkCmdBeginRenderPass(m_currentCommandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+        VkRenderingAttachmentInfo depthAttachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+        depthAttachment.imageView = m_context.impl()->getDepthImageView();
+        depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        depthAttachment.clearValue.depthStencil = {1.0f, 0};
+
+        VkRenderingInfo renderingInfo{VK_STRUCTURE_TYPE_RENDERING_INFO};
+        renderingInfo.renderArea = {{0,0}, m_context.impl()->getSwapchainExtent()};
+        renderingInfo.layerCount = 1;
+        renderingInfo.colorAttachmentCount = 1;
+        renderingInfo.pColorAttachments = &colorAttachment;
+        renderingInfo.pDepthAttachment = &depthAttachment;
 
         VkViewport viewport{};
         viewport.width = static_cast<float>(m_context.impl()->getSwapchainExtent().width);
@@ -147,6 +136,36 @@ namespace vela::backend
         VkRect2D scissor{};
         scissor.extent = m_context.impl()->getSwapchainExtent();
         vkCmdSetScissor(m_currentCommandBuffer, 0, 1, &scissor);
+
+        VkImageMemoryBarrier toColor{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        toColor.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        toColor.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        toColor.srcAccessMask = 0;
+        toColor.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        toColor.image = m_context.impl()->getSwapchainImages()[m_currentImageIndex];
+        toColor.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        toColor.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toColor.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
+
+        VkImageMemoryBarrier toDepth{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        toDepth.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        toDepth.newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        toDepth.srcAccessMask = 0;
+        toDepth.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        toDepth.image = m_context.impl()->getDepthImage();
+        toDepth.subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 };
+        toDepth.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toDepth.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
+        //This shit allocates every frame, fix it
+        std::array<VkImageMemoryBarrier, 2> memoryBarriers{toColor, toDepth};
+
+        vkCmdPipelineBarrier(m_currentCommandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+             | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+        0, 0, nullptr, 0, nullptr, static_cast<uint32_t>(memoryBarriers.size()), memoryBarriers.data());
+
+        vkCmdBeginRendering(m_currentCommandBuffer, &renderingInfo);
     }
 
     void RenderGraphImpl::endRenderPass()
@@ -154,24 +173,29 @@ namespace vela::backend
         if(!m_isFrameValid)
             return;
 
-        vkCmdEndRenderPass(m_currentCommandBuffer);
+        vkCmdEndRendering(m_currentCommandBuffer);
+
+        VkImageMemoryBarrier toPresent{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        toPresent.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        toPresent.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        toPresent.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        toPresent.dstAccessMask = 0;
+        toPresent.image = m_context.impl()->getSwapchainImages()[m_currentImageIndex];
+        toPresent.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        toPresent.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toPresent.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
+        vkCmdPipelineBarrier(m_currentCommandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &toPresent);
     }
 
     void RenderGraphImpl::recreateSwapchainResources()
     {
         vkDeviceWaitIdle(m_device);
-
-        for (auto fb : m_framebuffers) 
-            vkDestroyFramebuffer(m_device, fb, nullptr);
-
-        m_framebuffers.clear();
-
         m_context.impl()->recreateSwapchain();
-
-        createFramebuffers();
     }
 
-    void RenderGraphImpl::draw(const graphics::Mesh& mesh, const graphics::Material& material)
+    void RenderGraphImpl::draw(const graphics::Mesh& mesh, const graphics::Material& material, const glm::mat4& model)
     {
         if(!m_isFrameValid)
             return;
@@ -187,6 +211,9 @@ namespace vela::backend
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(m_currentCommandBuffer, 0, 1, buffers, offsets);
 
+        vkCmdPushConstants(m_currentCommandBuffer, material.impl()->getPipelineLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), 
+        &model);
+
         vkCmdDraw(m_currentCommandBuffer, mesh.impl()->getVertexCount(), 1, 0, 0);
     }
 
@@ -197,10 +224,6 @@ namespace vela::backend
         vkDestroySemaphore(m_device, m_imageAvailable, nullptr);
         vkDestroySemaphore(m_device, m_renderFinished, nullptr);
         vkDestroyFence(m_device, m_inFlightFence, nullptr);
-
-        for (auto& frameBuffer : m_framebuffers) 
-            vkDestroyFramebuffer(m_device, frameBuffer, nullptr);
-
     }
 
 } //namespace vela::backend

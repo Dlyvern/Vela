@@ -1,19 +1,19 @@
 #include "MeshImpl.hpp"
 #include "ContextImpl.hpp"
 #include "Vela/Core/Context.hpp"
+
 #include <cstring>
 #include <stdexcept>
 
 namespace vela::backend
 {
-    MeshImpl::MeshImpl(core::Context& ctx, std::span<const graphics::Vertex> vertices)
+    MeshImpl::MeshImpl(core::Context& ctx, std::span<const std::byte> vertexData, uint32_t vertexCount)
     {
-        auto contextImpl = ctx.impl();
-        m_allocator = contextImpl->getAllocator();
-        m_vertexCount = static_cast<uint32_t>(vertices.size());
+        m_allocator = ctx.impl()->getAllocator();
+        m_vertexCount = vertexCount;
 
         VkBufferCreateInfo bufferCI{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-        bufferCI.size = vertices.size() * sizeof(graphics::Vertex);
+        bufferCI.size = vertexData.size();
         bufferCI.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
         bufferCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -26,7 +26,7 @@ namespace vela::backend
         if (vmaCreateBuffer(m_allocator, &bufferCI, &allocCI, &m_buffer, &m_allocation, &info) != VK_SUCCESS)
             throw std::runtime_error("Failed to create vertex buffer");
 
-        std::memcpy(info.pMappedData, vertices.data(), bufferCI.size);
+        std::memcpy(info.pMappedData, vertexData.data(), vertexData.size());
     }
 
     MeshImpl::~MeshImpl()

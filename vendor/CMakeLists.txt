@@ -19,7 +19,8 @@ set(VMA_BUILD_SAMPLES OFF CACHE BOOL "Disable VMA samples" FORCE)
 add_subdirectory(VulkanMemoryAllocator)
 
 #stb
-add_subdirectory(stb)
+add_library(stb_image INTERFACE)
+target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/stb)
 
 # glm
 set(GLM_BUILD_TESTS OFF CACHE BOOL "Disable GLM tests" FORCE)

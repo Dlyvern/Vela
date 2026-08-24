@@ -8,7 +8,7 @@
 	path = vendor/volk
 	url = https://github.com/zeux/volk.git
 [submodule "vendor/stb"]
-	path = vendor/stb/stb
+	path = vendor/stb
 	url = https://github.com/nothings/stb.git
 [submodule "vendor/glm"]
 	path = vendor/glm

@@ -3,7 +3,6 @@
 
 #include <glm/mat4x4.hpp>
 
-#include <memory>
 #include <cstdint>
 
 namespace vela::scene

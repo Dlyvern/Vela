@@ -8,27 +8,37 @@
 #include "MeshImpl.hpp"
 #include "MaterialImpl.hpp"
 #include "ContextImpl.hpp"
-#include <vulkan/vulkan_core.h>
+
+#include <array>
+#include <stdexcept>
 
 namespace vela::backend
 {
-    RenderGraphImpl::RenderGraphImpl(core::Context& context) : m_device(context.impl()->getDevice()), 
-    m_graphicsQueue(context.impl()->getGraphicsQueue()), m_context(context)
+    RenderGraphImpl::RenderGraphImpl(core::Context& context) : m_context(context),
+    m_device(context.impl()->getDevice()), m_graphicsQueue(context.impl()->getGraphicsQueue())
     {
         VkSemaphoreCreateInfo semaphoreCI{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
         VkFenceCreateInfo fenceCI{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
         fenceCI.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-        if(VkResult result = vkCreateSemaphore(m_device, &semaphoreCI, nullptr, &m_imageAvailable); result != VK_SUCCESS)
-            throw std::runtime_error("Failed to create semaphore");
+        m_imageAvailable.resize(k_framesInFlight);
+        m_inFlightFences.resize(k_framesInFlight);
 
-        if(VkResult result = vkCreateSemaphore(m_device, &semaphoreCI, nullptr, &m_renderFinished); result != VK_SUCCESS)
-            throw std::runtime_error("Failed to create semaphore");
+        for (uint32_t frame = 0; frame < k_framesInFlight; ++frame)
+        {
+            if (VkResult result = vkCreateSemaphore(m_device, &semaphoreCI, nullptr, &m_imageAvailable[frame]); result != VK_SUCCESS)
+                throw std::runtime_error("Failed to create image-available semaphore");
 
-        if(VkResult result = vkCreateFence(m_device, &fenceCI, nullptr, &m_inFlightFence); result != VK_SUCCESS)
-            throw std::runtime_error("Failed to create fence");
+            if (VkResult result = vkCreateFence(m_device, &fenceCI, nullptr, &m_inFlightFences[frame]); result != VK_SUCCESS)
+                throw std::runtime_error("Failed to create fence");
+        }
 
-        m_commandBuffers.resize(context.impl()->getSwapchainImages().size());
+        createSwapchainSyncObjects();
+
+        m_presentPass = std::make_unique<PresentPass>(context.impl()->getSwapchainFormat(),
+            context.impl()->getDepthFormat());
+
+        m_commandBuffers.resize(k_framesInFlight);
         VkCommandBufferAllocateInfo commandBufferAI{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
         commandBufferAI.commandPool = context.impl()->getGraphicsCommandPool();
         commandBufferAI.commandBufferCount = static_cast<uint32_t>(m_commandBuffers.size());
@@ -38,12 +48,41 @@ namespace vela::backend
             throw std::runtime_error("Failed to allocat command buffers");
     }
 
+    void RenderGraphImpl::createSwapchainSyncObjects()
+    {
+        VkSemaphoreCreateInfo semaphoreCI{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+
+        m_renderFinished.resize(m_context.impl()->getSwapchainImages().size());
+
+        for (auto& semaphore : m_renderFinished)
+            if (VkResult result = vkCreateSemaphore(m_device, &semaphoreCI, nullptr, &semaphore); result != VK_SUCCESS)
+                throw std::runtime_error("Failed to create render-finished semaphore");
+    }
+
+    void RenderGraphImpl::destroySwapchainSyncObjects()
+    {
+        for (VkSemaphore semaphore : m_renderFinished)
+            vkDestroySemaphore(m_device, semaphore, nullptr);
+
+        m_renderFinished.clear();
+    }
+
     void RenderGraphImpl::beginFrame()
     {
-        vkWaitForFences(m_device, 1, &m_inFlightFence, VK_TRUE, UINT64_MAX);
-        vkResetFences(m_device, 1, &m_inFlightFence);
+        if (m_context.impl()->isSwapchainStale())
+        {
+            recreateSwapchainResources();
+            m_isFrameValid = false;
 
-        VkResult acquireResult = vkAcquireNextImageKHR(m_device, m_context.impl()->getSwapchain(), UINT64_MAX, m_imageAvailable, VK_NULL_HANDLE, &m_currentImageIndex);
+            return;
+        }
+
+        VkFence frameFence = m_inFlightFences[m_frameIndex];
+
+        vkWaitForFences(m_device, 1, &frameFence, VK_TRUE, UINT64_MAX);
+
+        VkResult acquireResult = vkAcquireNextImageKHR(m_device, m_context.impl()->getSwapchain(), UINT64_MAX,
+            m_imageAvailable[m_frameIndex], VK_NULL_HANDLE, &m_currentImageIndex);
 
         if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR)
         {
@@ -53,11 +92,15 @@ namespace vela::backend
             return;
         }
 
-        m_currentCommandBuffer = m_commandBuffers[m_currentImageIndex];
+        if (acquireResult != VK_SUCCESS && acquireResult != VK_SUBOPTIMAL_KHR)
+            throw std::runtime_error("Failed to acquire swapchain image");
+
+        m_currentCommandBuffer = m_commandBuffers[m_frameIndex];
 
         vkResetCommandBuffer(m_currentCommandBuffer, 0);
 
         VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         vkBeginCommandBuffer(m_currentCommandBuffer, &beginInfo);
     }
 
@@ -69,33 +112,72 @@ namespace vela::backend
             return;
         }
 
+        VkSemaphore renderFinished = m_renderFinished[m_currentImageIndex];
+        VkFence frameFence = m_inFlightFences[m_frameIndex];
+
         vkEndCommandBuffer(m_currentCommandBuffer);
 
-        VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-        submit.waitSemaphoreCount = 1;
-        submit.pWaitSemaphores = &m_imageAvailable;
-        submit.pWaitDstStageMask = &waitStage;
-        submit.commandBufferCount = 1;
-        submit.pCommandBuffers = &m_currentCommandBuffer;
-        submit.signalSemaphoreCount = 1;
-        submit.pSignalSemaphores = &m_renderFinished;
+        vkResetFences(m_device, 1, &frameFence);
 
-        vkQueueSubmit(m_graphicsQueue, 1, &submit, m_inFlightFence);
+        VkCommandBufferSubmitInfo commandBufferSubmitInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+        commandBufferSubmitInfo.commandBuffer = m_currentCommandBuffer;
+
+        VkSemaphoreSubmitInfo waitSemaphoreSubmitInfo{VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+        waitSemaphoreSubmitInfo.semaphore = m_imageAvailable[m_frameIndex];
+        waitSemaphoreSubmitInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+        VkSemaphoreSubmitInfo signalSemaphoreSubmitInfo{VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+        signalSemaphoreSubmitInfo.semaphore = renderFinished;
+        signalSemaphoreSubmitInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+        VkSubmitInfo2 submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+        submitInfo.pCommandBufferInfos = &commandBufferSubmitInfo;
+        submitInfo.commandBufferInfoCount = 1;
+        submitInfo.pWaitSemaphoreInfos = &waitSemaphoreSubmitInfo;
+        submitInfo.waitSemaphoreInfoCount = 1;
+        submitInfo.pSignalSemaphoreInfos = &signalSemaphoreSubmitInfo;
+        submitInfo.signalSemaphoreInfoCount = 1;
+    
+        vkQueueSubmit2(m_graphicsQueue, 1, &submitInfo, frameFence);
 
         auto swapchain = m_context.impl()->getSwapchain();
 
         VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
         present.waitSemaphoreCount = 1;
-        present.pWaitSemaphores = &m_renderFinished;
+        present.pWaitSemaphores = &renderFinished;
         present.swapchainCount = 1;
         present.pSwapchains = &swapchain;
         present.pImageIndices = &m_currentImageIndex;
 
         VkResult presentResult = vkQueuePresentKHR(m_graphicsQueue, &present);
 
+        m_frameIndex = (m_frameIndex + 1) % k_framesInFlight;
+
         if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR)
             recreateSwapchainResources();
+    }
+
+    PassContext RenderGraphImpl::makePassContext() const
+    {
+        PassContext passContext;
+        passContext.commandBuffer = m_currentCommandBuffer;
+        passContext.colorImage = m_context.impl()->getSwapchainImages()[m_currentImageIndex];
+        passContext.colorImageView = m_context.impl()->getSwapchainImageViews().at(m_currentImageIndex);
+        passContext.depthImage = m_context.impl()->getDepthImage();
+        passContext.depthImageView = m_context.impl()->getDepthImageView();
+        passContext.extent = m_context.impl()->getSwapchainExtent();
+
+        return passContext;
+    }
+
+    const std::vector<VkFormat>& RenderGraphImpl::getColorFormats() const
+    {
+        return m_presentPass->getColorFormats();
+    }
+
+    VkFormat RenderGraphImpl::getDepthFormat() const
+    {
+        return m_presentPass->getDepthFormat();
     }
 
     void RenderGraphImpl::beginPresentPass(float r, float g, float b, float a)
@@ -103,69 +185,8 @@ namespace vela::backend
         if(!m_isFrameValid)
             return;
 
-        VkClearValue clearValue{{{r, g, b, a}}};
-
-        VkRenderingAttachmentInfo colorAttachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-        colorAttachment.imageView = m_context.impl()->getSwapchainImageViews().at(m_currentImageIndex);
-        colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        colorAttachment.clearValue = clearValue;
-
-        VkRenderingAttachmentInfo depthAttachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-        depthAttachment.imageView = m_context.impl()->getDepthImageView();
-        depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        depthAttachment.clearValue.depthStencil = {1.0f, 0};
-
-        VkRenderingInfo renderingInfo{VK_STRUCTURE_TYPE_RENDERING_INFO};
-        renderingInfo.renderArea = {{0,0}, m_context.impl()->getSwapchainExtent()};
-        renderingInfo.layerCount = 1;
-        renderingInfo.colorAttachmentCount = 1;
-        renderingInfo.pColorAttachments = &colorAttachment;
-        renderingInfo.pDepthAttachment = &depthAttachment;
-
-        VkViewport viewport{};
-        viewport.width = static_cast<float>(m_context.impl()->getSwapchainExtent().width);
-        viewport.height = static_cast<float>(m_context.impl()->getSwapchainExtent().height);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        vkCmdSetViewport(m_currentCommandBuffer, 0, 1, &viewport);
-
-        VkRect2D scissor{};
-        scissor.extent = m_context.impl()->getSwapchainExtent();
-        vkCmdSetScissor(m_currentCommandBuffer, 0, 1, &scissor);
-
-        VkImageMemoryBarrier toColor{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-        toColor.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        toColor.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        toColor.srcAccessMask = 0;
-        toColor.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        toColor.image = m_context.impl()->getSwapchainImages()[m_currentImageIndex];
-        toColor.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-        toColor.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        toColor.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-
-
-        VkImageMemoryBarrier toDepth{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-        toDepth.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        toDepth.newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        toDepth.srcAccessMask = 0;
-        toDepth.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        toDepth.image = m_context.impl()->getDepthImage();
-        toDepth.subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 };
-        toDepth.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        toDepth.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-
-        //This shit allocates every frame, fix it
-        std::array<VkImageMemoryBarrier, 2> memoryBarriers{toColor, toDepth};
-
-        vkCmdPipelineBarrier(m_currentCommandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
-             | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-        0, 0, nullptr, 0, nullptr, static_cast<uint32_t>(memoryBarriers.size()), memoryBarriers.data());
-
-        vkCmdBeginRendering(m_currentCommandBuffer, &renderingInfo);
+        m_presentPass->setClearColor(r, g, b, a);
+        m_presentPass->begin(makePassContext());
     }
 
     void RenderGraphImpl::endRenderPass()
@@ -173,26 +194,19 @@ namespace vela::backend
         if(!m_isFrameValid)
             return;
 
-        vkCmdEndRendering(m_currentCommandBuffer);
-
-        VkImageMemoryBarrier toPresent{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-        toPresent.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        toPresent.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-        toPresent.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        toPresent.dstAccessMask = 0;
-        toPresent.image = m_context.impl()->getSwapchainImages()[m_currentImageIndex];
-        toPresent.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-        toPresent.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        toPresent.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-
-        vkCmdPipelineBarrier(m_currentCommandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &toPresent);
+        m_presentPass->end(makePassContext());
     }
 
     void RenderGraphImpl::recreateSwapchainResources()
     {
         vkDeviceWaitIdle(m_device);
+
         m_context.impl()->recreateSwapchain();
+
+        destroySwapchainSyncObjects();
+        createSwapchainSyncObjects();
+
+        m_presentPass->setColorFormat(m_context.impl()->getSwapchainFormat());
     }
 
     void RenderGraphImpl::draw(const graphics::Mesh& mesh, const graphics::Material& material, const glm::mat4& model)
@@ -203,7 +217,7 @@ namespace vela::backend
         vkCmdBindPipeline(m_currentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, material.impl()->getPipeline());
 
         auto descriptorSet = material.impl()->getDescriptorSet();
-        
+
         vkCmdBindDescriptorSets(m_currentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
             material.impl()->getPipelineLayout(), 0, 1, &descriptorSet, 0, nullptr);
 
@@ -211,7 +225,7 @@ namespace vela::backend
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(m_currentCommandBuffer, 0, 1, buffers, offsets);
 
-        vkCmdPushConstants(m_currentCommandBuffer, material.impl()->getPipelineLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), 
+        vkCmdPushConstants(m_currentCommandBuffer, material.impl()->getPipelineLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4),
         &model);
 
         vkCmdDraw(m_currentCommandBuffer, mesh.impl()->getVertexCount(), 1, 0, 0);
@@ -221,9 +235,13 @@ namespace vela::backend
     {
         vkDeviceWaitIdle(m_device);
 
-        vkDestroySemaphore(m_device, m_imageAvailable, nullptr);
-        vkDestroySemaphore(m_device, m_renderFinished, nullptr);
-        vkDestroyFence(m_device, m_inFlightFence, nullptr);
+        destroySwapchainSyncObjects();
+
+        for (VkSemaphore semaphore : m_imageAvailable)
+            vkDestroySemaphore(m_device, semaphore, nullptr);
+
+        for (VkFence fence : m_inFlightFences)
+            vkDestroyFence(m_device, fence, nullptr);
     }
 
 } //namespace vela::backend

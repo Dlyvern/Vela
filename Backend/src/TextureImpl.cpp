@@ -72,18 +72,24 @@ namespace vela::backend
         vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
 
         // For UNDEFINED → TRANSFER_DST_OPTIMAL:
-        VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         barrier.image = m_image;
         barrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
-        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
-            0, 0, nullptr, 0, nullptr, 1, &barrier);
+        barrier.srcAccessMask = VK_ACCESS_2_NONE;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+        barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+
+        VkDependencyInfo dependencyInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        dependencyInfo.imageMemoryBarrierCount = 1;
+        dependencyInfo.pImageMemoryBarriers = &barrier;
+
+        vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
 
         VkBufferImageCopy region{};
         region.bufferOffset = 0;
@@ -98,28 +104,32 @@ namespace vela::backend
         // For TRANSFER_DST_OPTIMAL → SHADER_READ_ONLY_OPTIMAL:
         barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
+        barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
 
-        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-            0, 0, nullptr, 0, nullptr, 1, &barrier);
+        dependencyInfo.pImageMemoryBarriers = &barrier;
 
+        vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
 
         vkEndCommandBuffer(commandBuffer);
 
-        VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-        submit.waitSemaphoreCount = 0;
-        submit.pWaitSemaphores = nullptr;
-        submit.pWaitDstStageMask = nullptr;
-        submit.commandBufferCount = 1;
-        submit.pCommandBuffers = &commandBuffer;
-        submit.signalSemaphoreCount = 0;
-        submit.pSignalSemaphores = nullptr;
+        VkCommandBufferSubmitInfo commandBufferSubmitInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+        commandBufferSubmitInfo.commandBuffer = commandBuffer;
 
-        vkQueueSubmit(context.impl()->getGraphicsQueue(), 1, &submit, nullptr);
+        VkSubmitInfo2 submit{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+        submit.pCommandBufferInfos = &commandBufferSubmitInfo;
+        submit.commandBufferInfoCount = 1;
 
-        vkQueueWaitIdle(context.impl()->getGraphicsQueue());
+        // The graphics queue, not the transfer one: the barriers above are
+        // recorded into a pool owned by the graphics family.
+        VkQueue uploadQueue = context.impl()->getGraphicsQueue();
+
+        vkQueueSubmit2(uploadQueue, 1, &submit, VK_NULL_HANDLE);
+
+        vkQueueWaitIdle(uploadQueue);
 
         vkFreeCommandBuffers(m_device, context.impl()->getGraphicsCommandPool(), 1, &commandBuffer);
 

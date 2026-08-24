@@ -41,6 +41,8 @@ namespace vela::graphics
         void endRenderPass();
         void endFrame();
 
+        backend::RenderGraphImpl* impl() const;
+
         ~RenderGraph();
 
     private:

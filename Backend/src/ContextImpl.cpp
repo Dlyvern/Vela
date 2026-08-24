@@ -1,15 +1,15 @@
 #include "ContextImpl.hpp"
 #include <vector>
 #include <stdexcept>
-#include <limits>
-#include <fstream>
-
-#include "Vela/Utility/Resources.hpp"
-#include "Vela/Graphics/Vertex.hpp"
+#include <iostream>
+#include <cstring>
+#include <algorithm>
+#include <unordered_set>
 
 namespace vela::backend
 { 
-    ContextImpl::ContextImpl(core::IWindowBackend& windowBackend) : m_windowBackend(windowBackend)
+    ContextImpl::ContextImpl(core::IWindowBackend& windowBackend, const core::ContextPreferences& contextPreferences) : m_windowBackend(windowBackend),
+    m_contextPreferences(contextPreferences)
     {
         volkInitialize();
         createInstance(windowBackend);
@@ -20,9 +20,13 @@ namespace vela::backend
     {
         vkDeviceWaitIdle(m_device);
 
+        vkDestroyImageView(m_device, m_depthImageView, nullptr);
+        vmaDestroyImage(m_allocator, m_depthImage, m_depthImageAllocation);
+
+        // After every allocation it owns, never before.
         vmaDestroyAllocator(m_allocator);
 
-        for (auto& imageView : m_swapchainImageViews) 
+        for (auto& imageView : m_swapchainImageViews)
             vkDestroyImageView(m_device, imageView, nullptr);
 
         vkDestroyCommandPool(m_device, m_commandPool, nullptr);
@@ -44,13 +48,13 @@ namespace vela::backend
     {
         VmaVulkanFunctions vkFuncs{};
         vkFuncs.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
-        vkFuncs.vkGetDeviceProcAddr   = vkGetDeviceProcAddr;
+        vkFuncs.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
 
         VmaAllocatorCreateInfo allocInfo{};
         allocInfo.instance = m_instance;
         allocInfo.physicalDevice = m_physicalDevice;
         allocInfo.device = m_device;
-        allocInfo.vulkanApiVersion = VK_API_VERSION_1_3;
+        allocInfo.vulkanApiVersion = m_vulkanApiVersion;
         allocInfo.pVulkanFunctions = &vkFuncs;
 
         if (vmaCreateAllocator(&allocInfo, &m_allocator) != VK_SUCCESS)
@@ -64,7 +68,8 @@ namespace vela::backend
         VkSurfaceCapabilitiesKHR caps;
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &caps);
 
-        while (caps.currentExtent.width == 0 || caps.currentExtent.height == 0)
+        // Minimised: block until there is something to render into again.
+        while (framebufferExtent(caps).width == 0 || framebufferExtent(caps).height == 0)
         {
             m_windowBackend.waitEvents();
             vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &caps);
@@ -73,10 +78,8 @@ namespace vela::backend
         vkDestroyImageView(m_device, m_depthImageView, nullptr);
         vmaDestroyImage(m_allocator, m_depthImage, m_depthImageAllocation);
 
-        for (auto v  : m_swapchainImageViews) 
+        for (auto v  : m_swapchainImageViews)
             vkDestroyImageView(m_device, v, nullptr);
-
-        vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
 
         m_swapchainImageViews.clear();
 
@@ -88,7 +91,7 @@ namespace vela::backend
     void ContextImpl::createCommandPool()
     {
         VkCommandPoolCreateInfo commandPoolCI{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-        commandPoolCI.queueFamilyIndex = m_graphicsFamily;
+        commandPoolCI.queueFamilyIndex = m_queueFamilyIndices.graphics.value();
         commandPoolCI.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
         if(VkResult result = vkCreateCommandPool(m_device, &commandPoolCI, nullptr, &m_commandPool); result != VK_SUCCESS)
@@ -98,6 +101,11 @@ namespace vela::backend
     VkFormat ContextImpl::getSwapchainFormat() const
     {
         return m_swapchainFormat;
+    }
+
+    VkFormat ContextImpl::getDepthFormat() const
+    {
+        return m_depthFormat;
     }
 
     void ContextImpl::createSwapchain()
@@ -125,9 +133,22 @@ namespace vela::backend
             std::vector<VkPresentModeKHR> presentModes(presentModeCount);
             vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data());
 
+            auto toVkPresentMode = [](core::PresentMode mode)
+            {
+                switch (mode)
+                {
+                    case core::PresentMode::eIMMEDIATE:    return VK_PRESENT_MODE_IMMEDIATE_KHR;
+                    case core::PresentMode::eMAILBOX:      return VK_PRESENT_MODE_MAILBOX_KHR;
+                    case core::PresentMode::eFIFO_RELAXED: return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+                    default:                               return VK_PRESENT_MODE_FIFO_KHR;
+                }
+            };
+
+            const VkPresentModeKHR prefered = toVkPresentMode(m_contextPreferences.preferedPresentMode);
+
             for(const VkPresentModeKHR presentMode : presentModes)
-                if(presentMode == VK_PRESENT_MODE_MAILBOX_KHR)
-                    return presentMode;
+                if(presentMode == prefered)
+                    return prefered;
 
             return VK_PRESENT_MODE_FIFO_KHR;
         };
@@ -147,13 +168,14 @@ namespace vela::backend
         if (surfaceCapabilities.maxImageCount > 0 && imageCount > surfaceCapabilities.maxImageCount)
             imageCount = surfaceCapabilities.maxImageCount;
 
+        VkExtent2D extent = framebufferExtent(surfaceCapabilities);
 
         VkSwapchainCreateInfoKHR swapchainCI{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
         swapchainCI.surface = m_surface;
         swapchainCI.minImageCount = imageCount;
         swapchainCI.imageFormat = format.format; 
         swapchainCI.imageColorSpace = format.colorSpace; 
-        swapchainCI.imageExtent = surfaceCapabilities.currentExtent;
+        swapchainCI.imageExtent = extent;
         swapchainCI.imageArrayLayers = 1;
         swapchainCI.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         swapchainCI.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -161,13 +183,23 @@ namespace vela::backend
         swapchainCI.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
         swapchainCI.presentMode  = presentMode;
         swapchainCI.clipped = VK_TRUE;
-        swapchainCI.oldSwapchain = VK_NULL_HANDLE;
+        swapchainCI.oldSwapchain = m_swapchain;
 
-        if(VkResult result = vkCreateSwapchainKHR(m_device, &swapchainCI, nullptr, &m_swapchain); result != VK_SUCCESS)
+        VkSwapchainKHR oldSwapchain = m_swapchain;
+
+        VkResult swapchainCreationResult = vkCreateSwapchainKHR(m_device, &swapchainCI, nullptr, &m_swapchain);
+
+        if(swapchainCreationResult != VK_SUCCESS)
+        {
+            std::cerr << "Swapchain error result: " << swapchainCreationResult << '\n';
             throw std::runtime_error("Failed to create swapchain");
+        }
+
+        if (oldSwapchain != VK_NULL_HANDLE)
+            vkDestroySwapchainKHR(m_device, oldSwapchain, nullptr);
 
         m_swapchainFormat = format.format;
-        m_swapchainExtent = surfaceCapabilities.currentExtent;
+        m_swapchainExtent = extent;
 
         uint32_t swapchainImagesCount;
         vkGetSwapchainImagesKHR(m_device, m_swapchain, &swapchainImagesCount, nullptr);
@@ -202,7 +234,7 @@ namespace vela::backend
         imageCI.extent = {static_cast<uint32_t>(m_swapchainExtent.width), static_cast<uint32_t>(m_swapchainExtent.height), 1};
         imageCI.mipLevels = 1;
         imageCI.arrayLayers = 1;
-        imageCI.format = VK_FORMAT_D32_SFLOAT;
+        imageCI.format = m_depthFormat;
         imageCI.tiling = VK_IMAGE_TILING_OPTIMAL; 
         imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         imageCI.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
@@ -216,7 +248,7 @@ namespace vela::backend
             throw std::runtime_error("Failed to create depth image");
 
         VkImageViewCreateInfo imageViewCI{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-        imageViewCI.format = VK_FORMAT_D32_SFLOAT;
+        imageViewCI.format = m_depthFormat;
         imageViewCI.image = m_depthImage;
         imageViewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
         imageViewCI.components = { VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -238,36 +270,136 @@ namespace vela::backend
         if(physicalDevices.empty())
             throw std::runtime_error("Failed to find GPUs with Vulkan support");
 
+        auto gpuTypeToVk = [](const core::GPUDeviceType& deviceType)
+        {
+            if(deviceType == core::GPUDeviceType::eDISCRETE)
+                return VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+            if(deviceType == core::GPUDeviceType::eINTEGRATED)
+                return VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+
+            return VK_PHYSICAL_DEVICE_TYPE_OTHER;
+        };
+
         auto checkQueueFamilyProperties = [this](VkPhysicalDevice device)
         {
+            QueueFamilyIndices indices;
             uint32_t queueFamilyCount{0};
             vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
             std::vector<VkQueueFamilyProperties> queueFamiles(queueFamilyCount);
             vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamiles.data());
 
+            // std::cout << queueFamilyCount << '\n';
+
             for(int index = 0; index < queueFamilyCount; ++index)
             {
-                VkBool32 presentSupport{VK_FALSE};
                 const auto &queueFamily = queueFamiles[index];
+                
+                // Graphics
+                if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+                {
+                    if (!indices.graphics)
+                    {
+                        indices.graphics = index;
+                        // std::cout << "Graphics\n";
+                    }
+                }
 
+                // Dedicated compute queue:
+                // compute but NOT graphics 
+                if ((queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT) && !(queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT))
+                {
+                    if (!indices.compute)
+                    {
+                        indices.compute = index;
+                        // std::cout << "Compute\n";
+
+                    }
+                }
+
+                // Dedicated transfer queue:
+                // transfer but NOT graphics/compute
+                if ((queueFamily.queueFlags & VK_QUEUE_TRANSFER_BIT) &&  !(queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
+                    !(queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT))
+                {
+                    if (!indices.transfer)
+                    {
+                        indices.transfer = index;
+                        // std::cout << "Transfer\n";
+                    }
+                }
+
+                // Present support
+
+                VkBool32 presentSupport{VK_FALSE};
                 vkGetPhysicalDeviceSurfaceSupportKHR(device, index, m_surface, &presentSupport);
 
-                if ((queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) && presentSupport)
+                if (presentSupport && !indices.present)
                 {
-                    m_graphicsFamily = index;
-                    return true;
+                    indices.present = index;
+                    // std::cout << "Present\n";
                 }
             }
 
-            return false;
+            // Fallbacks
+            if (!indices.compute)
+            {
+                for (uint32_t i = 0; i < queueFamilyCount; ++i)
+                {
+                    if (queueFamiles[i].queueFlags & VK_QUEUE_COMPUTE_BIT)
+                    {
+                        indices.compute = i;
+                        break;
+                    }
+                }
+            }
+
+            if (!indices.transfer)
+            {
+                for (uint32_t i = 0; i < queueFamilyCount; ++i)
+                {
+                    if (queueFamiles[i].queueFlags & VK_QUEUE_TRANSFER_BIT)
+                    {
+                        indices.transfer = i;
+                        break;
+                    }
+                }
+            }
+
+            if(!indices.complete())
+                return false;
+
+            m_queueFamilyIndices = indices;
+
+            return true;
         };
 
         for(const auto& physicalDevice : physicalDevices)
-            if(checkQueueFamilyProperties(physicalDevice))
-            {
-                m_physicalDevice = physicalDevice;
-                return;
-            }
+        {
+            VkPhysicalDeviceProperties physicalDeviceProperties{};
+            vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
+
+            if(gpuTypeToVk(m_contextPreferences.preferedGpuType) != physicalDeviceProperties.deviceType)
+                continue;
+
+            if(!checkQueueFamilyProperties(physicalDevice))
+                continue;
+
+            m_physicalDevice = physicalDevice;
+
+            std::cout << "Selected GPU: \n ------------------------------------------\n";
+
+            std::cout << "Name: " << physicalDeviceProperties.deviceName << '\n';
+            std::cout << "API version: " << physicalDeviceProperties.apiVersion << '\n';
+            std::cout << "Driver version: " << physicalDeviceProperties.driverVersion << '\n';
+            std::cout << "Present queue family " << m_queueFamilyIndices.present.value() << '\n';
+            std::cout << "Graphics queue family " << m_queueFamilyIndices.graphics.value() << '\n';
+            std::cout << "Transfer queue family " << m_queueFamilyIndices.transfer.value() << '\n';
+            std::cout << "Compute queue family " << m_queueFamilyIndices.compute.value() << '\n';
+
+            std::cout << "------------------------------------------\n";
+
+            break;
+        }
 
         if (!m_physicalDevice)
             throw std::runtime_error("No suitable physical device found");
@@ -276,23 +408,39 @@ namespace vela::backend
     void ContextImpl::createDevice()
     {
         float queuePriority = 1.0f;
-        VkDeviceQueueCreateInfo queueCI{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
-        queueCI.queueFamilyIndex = m_graphicsFamily;
-        queueCI.queueCount = 1;
-        queueCI.pQueuePriorities = &queuePriority;
+
+        std::vector<VkDeviceQueueCreateInfo> queueInfos;
+
+        std::unordered_set<uint32_t> uniqueFamilies = {
+            m_queueFamilyIndices.graphics.value(),
+            m_queueFamilyIndices.compute.value(),
+            m_queueFamilyIndices.transfer.value(),
+        };
+
+        for (const auto& family : uniqueFamilies)
+        {
+            VkDeviceQueueCreateInfo info{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
+            info.queueFamilyIndex = family;
+            info.queueCount = 1;
+            info.pQueuePriorities = &queuePriority;
+
+            queueInfos.push_back(info);
+        }
 
         std::vector<const char*> deviceExtensions = {
             VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         };
 
-        VkPhysicalDeviceVulkan13Features features13{};
-        features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+        VkPhysicalDeviceVulkan13Features features13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
         features13.dynamicRendering = VK_TRUE;
+        features13.synchronization2 = VK_TRUE;
+
+        // VkPhysicalDeviceVulkan14Features features14{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES};
 
         VkDeviceCreateInfo deviceCI{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
         deviceCI.pNext = &features13;
-        deviceCI.queueCreateInfoCount = 1;
-        deviceCI.pQueueCreateInfos = &queueCI;
+        deviceCI.queueCreateInfoCount = static_cast<uint32_t>(queueInfos.size());
+        deviceCI.pQueueCreateInfos = queueInfos.data();
         deviceCI.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
         deviceCI.ppEnabledExtensionNames = deviceExtensions.data();
 
@@ -301,7 +449,9 @@ namespace vela::backend
 
         volkLoadDevice(m_device);
 
-        vkGetDeviceQueue(m_device, m_graphicsFamily, 0, &m_graphicsQueue);
+        vkGetDeviceQueue(m_device, m_queueFamilyIndices.graphics.value(), 0, &m_graphicsQueue);
+        vkGetDeviceQueue(m_device, m_queueFamilyIndices.compute.value(), 0, &m_computeQueue);
+        vkGetDeviceQueue(m_device, m_queueFamilyIndices.transfer.value(), 0, &m_transferQueue);
     }
 
     VkImage ContextImpl::getDepthImage() const
@@ -359,14 +509,142 @@ namespace vela::backend
         m_surface = surface;
     }
 
+    void ContextImpl::setNativeWindow(void* nativeWindow)
+    {
+        m_nativeWindow = nativeWindow;
+    }
+
+    void ContextImpl::waitIdle() const
+    {
+        vkDeviceWaitIdle(m_device);
+    }
+
+    bool ContextImpl::isSwapchainStale() const
+    {
+        int width{0};
+        int height{0};
+        m_windowBackend.getFramebufferSize(m_nativeWindow, width, height);
+
+        if (static_cast<uint32_t>(width) == m_swapchainExtent.width
+            && static_cast<uint32_t>(height) == m_swapchainExtent.height)
+            return false;
+
+        VkSurfaceCapabilitiesKHR capabilities;
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &capabilities);
+
+        const VkExtent2D extent = framebufferExtent(capabilities);
+
+        return extent.width != m_swapchainExtent.width || extent.height != m_swapchainExtent.height;
+    }
+
+    VkExtent2D ContextImpl::framebufferExtent(const VkSurfaceCapabilitiesKHR& capabilities) const
+    {
+        if (capabilities.currentExtent.width != UINT32_MAX && capabilities.currentExtent.height != UINT32_MAX)
+            return capabilities.currentExtent;
+
+        int width{0};
+        int height{0};
+        m_windowBackend.getFramebufferSize(m_nativeWindow, width, height);
+
+        VkExtent2D extent{static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
+
+        extent.width = std::clamp(extent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+        extent.height = std::clamp(extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+
+        return extent;
+    }
+
+    bool ContextImpl::checkInstanceExtensions(const std::vector<const char*>& extensions)
+    {
+        uint32_t extensionCount = 0;
+
+        VkResult result = vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount,
+            nullptr);
+
+        if (result != VK_SUCCESS)
+            return false;
+
+        std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+
+        result = vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, availableExtensions.data());
+
+        if (result != VK_SUCCESS)
+            return false;
+
+        for (const char* required : extensions)
+        {
+            bool found = false;
+
+            for (const auto& available : availableExtensions)
+            {
+                if (std::strcmp(required, available.extensionName) == 0)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                std::cerr << "Missing Vulkan instance extension: " << required << '\n';
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    bool ContextImpl::checkValidationLayers(const std::vector<const char*>& requiredLayers)
+    {
+        uint32_t layerCount = 0;
+
+        VkResult result = vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+
+        if (result != VK_SUCCESS)
+            return false;
+
+        std::vector<VkLayerProperties> availableLayers(layerCount);
+
+        result = vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+        if (result != VK_SUCCESS)
+            return false;
+
+        for (const char* required : requiredLayers)
+        {
+            bool found = false;
+
+            for (const auto& available : availableLayers)
+            {
+                if (std::strcmp(required, available.layerName) == 0)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                std::cerr << "Missing Vulkan layer: " << required << '\n';
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     void ContextImpl::createInstance(core::IWindowBackend& windowBackend)
     {
         VkApplicationInfo appInfo{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-        appInfo.pApplicationName = "Vela";
-        appInfo.applicationVersion = VK_MAKE_VERSION(0, 0, 1);
-        appInfo.pEngineName = "VelaEngine";
-        appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-        appInfo.apiVersion = VK_API_VERSION_1_3;
+        appInfo.pApplicationName = m_contextPreferences.applicationName.c_str();
+        appInfo.applicationVersion = VK_MAKE_VERSION(m_contextPreferences.applicationVersion.major, 
+            m_contextPreferences.applicationVersion.minor, m_contextPreferences.applicationVersion.patch);
+        
+        appInfo.pEngineName = m_contextPreferences.engineName.c_str();
+        appInfo.engineVersion = VK_MAKE_VERSION(m_contextPreferences.engineVersion.major, 
+            m_contextPreferences.engineVersion.minor, m_contextPreferences.engineVersion.patch);
+
+        appInfo.apiVersion = m_vulkanApiVersion;
 
         std::vector<const char*> extensions = windowBackend.requiredInstanceExtensions();
 
@@ -374,11 +652,17 @@ namespace vela::backend
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
 
+        if(!checkInstanceExtensions(extensions))
+            throw std::runtime_error("Required Vulkan instance extensions are unavailable");
+
         std::vector<const char*> layers;
 
-        #ifdef VELA_DEBUG
-            layers.push_back("VK_LAYER_KHRONOS_validation");
-        #endif
+#ifdef VELA_DEBUG
+        layers.push_back("VK_LAYER_KHRONOS_validation");
+#endif
+
+        if(!checkValidationLayers(layers))
+            throw std::runtime_error("Required Vulkan layers are unavailable");
 
         VkInstanceCreateInfo createInfo{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
         createInfo.pApplicationInfo = &appInfo;

@@ -39,5 +39,10 @@ namespace vela::graphics
         m_impl->draw(mesh, material, model);
     }
 
+    backend::RenderGraphImpl* RenderGraph::impl() const
+    {
+        return m_impl.get();
+    }
+
     RenderGraph::~RenderGraph() = default;
 } // namespace vela::graphics

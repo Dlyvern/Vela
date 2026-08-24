@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "Vela/Core/IWindowBackend.hpp"
+#include "Vela/Core/ContextPreferences.hpp"
 
 namespace vela::graphics
 {
@@ -26,13 +27,10 @@ namespace vela::core
     class Context
     {
     public:
-        Context(IWindowBackend& windowBackend);
+        Context(IWindowBackend& windowBackend, const ContextPreferences& contextPreferences = {});
         void createSurfaceFor(Window& window);
 
-        void setMesh(const graphics::Mesh& mesh);
-        void setMaterial(const graphics::Material& material);
-
-        void drawFrame();
+        void waitIdle();
 
         ~Context();
         Context(Context&&) noexcept;

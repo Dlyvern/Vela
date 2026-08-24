@@ -3,18 +3,24 @@
 
 #include "volk.h"
 #include "Vela/Core/IWindowBackend.hpp"
+#include "Vela/Core/ContextPreferences.hpp"
 
 #include "vk_mem_alloc.h"
+
+#include <optional>
 
 namespace vela::backend
 {
     class ContextImpl
     {
     public:
-        ContextImpl(core::IWindowBackend& windowBackend);
+        ContextImpl(core::IWindowBackend& windowBackend, const core::ContextPreferences& contextPreferences);
         ~ContextImpl();
 
         void setSurface(VkSurfaceKHR surface);
+        void setNativeWindow(void* nativeWindow);
+
+        void waitIdle() const;
 
         VkDevice getDevice() const;
         VkInstance getInstance() const;
@@ -30,6 +36,9 @@ namespace vela::backend
         
         VkExtent2D getSwapchainExtent() const;
         VkFormat getSwapchainFormat() const;
+        VkFormat getDepthFormat() const;
+
+        bool isSwapchainStale() const;
 
         void pickPhysicalDevice();
         void createDevice();
@@ -41,14 +50,44 @@ namespace vela::backend
         void recreateSwapchain();
 
     private:
+        struct QueueFamilyIndices
+        {
+            std::optional<uint32_t> graphics;
+            std::optional<uint32_t> compute;
+            std::optional<uint32_t> transfer;
+            std::optional<uint32_t> present;
+
+            bool complete() const
+            {
+                return graphics.has_value() && compute.has_value() &&
+                    transfer.has_value() && present.has_value();
+            }
+        };
+
         void createInstance(core::IWindowBackend& windowBackend);
+
+        VkExtent2D framebufferExtent(const VkSurfaceCapabilitiesKHR& capabilities) const;
+
+        bool checkInstanceExtensions(const std::vector<const char*>& extensions);
+        bool checkValidationLayers(const std::vector<const char*>& requiredLayers);
+
+        //TODO expose it to public API later
+        static constexpr uint32_t m_vulkanApiVersion{VK_API_VERSION_1_3};
+        static constexpr VkFormat m_depthFormat{VK_FORMAT_D32_SFLOAT};
+
+        core::ContextPreferences m_contextPreferences;
 
         VkPhysicalDevice m_physicalDevice{VK_NULL_HANDLE};
         VkDevice m_device{VK_NULL_HANDLE};
         VkInstance m_instance{VK_NULL_HANDLE};
         VkSurfaceKHR m_surface{VK_NULL_HANDLE};
-        uint32_t m_graphicsFamily{0};
+        void* m_nativeWindow{nullptr};
+
+        QueueFamilyIndices m_queueFamilyIndices{};
+
         VkQueue m_graphicsQueue{VK_NULL_HANDLE};
+        VkQueue m_transferQueue{VK_NULL_HANDLE};
+        VkQueue m_computeQueue{VK_NULL_HANDLE};
 
         VkSwapchainKHR m_swapchain{VK_NULL_HANDLE};
         VkFormat m_swapchainFormat{VK_FORMAT_UNDEFINED};   

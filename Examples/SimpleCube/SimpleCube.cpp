@@ -14,8 +14,12 @@
 int main()
 {
     vela::windowing::GLFWWindowBackend backend;
-    vela::core::Window window(backend, 800, 600, "SimpleCube");
-    vela::core::Context ctx(backend);
+    vela::core::Window window(backend, {.title = "SimpleCube", .width = 800, .height = 600});
+
+    vela::core::ContextPreferences contextPreferences{};
+    contextPreferences.preferedGpuType = vela::core::GPUDeviceType::eDISCRETE;
+
+    vela::core::Context ctx(backend, contextPreferences);
     ctx.createSurfaceFor(window);
     vela::graphics::RenderGraph renderGraph(ctx);
 
@@ -80,9 +84,23 @@ int main()
     vela::graphics::Mesh triangle(ctx, verts);
     vela::graphics::Mesh cube(ctx, cubeVerts);
 
-    vela::graphics::Material material(ctx, vela::utilities::resources::find("shaders/static_shader.vert.spv").string(), vela::utilities::resources::find("shaders/static_shader.frag.spv").string());
+    vela::graphics::Material material(ctx, renderGraph,
+    {
+        .vertexShaderPath = vela::utilities::resources::find("shaders/static_shader.vert.spv").string(),
+        .fragmentShaderPath = vela::utilities::resources::find("shaders/static_shader.frag.spv").string(),
+        .vertexLayout = vela::graphics::StaticVertex::layout()
+    });
+
+    vela::graphics::Material spriteMaterial(ctx, renderGraph,
+    {
+        .vertexShaderPath = vela::utilities::resources::find("shaders/sprite_shader.vert.spv").string(),
+        .fragmentShaderPath = vela::utilities::resources::find("shaders/sprite_shader.frag.spv").string(),
+        .vertexLayout = vela::graphics::SpriteVertex::layout()
+    });
+
     vela::graphics::Texture texture(ctx, vela::utilities::resources::find("VelixV.png").string());
     material.setAlbedoTexture(texture);
+    spriteMaterial.setAlbedoTexture(texture);
 
     vela::scene::Camera camera;
     camera.setAspect(800.0f / 600.0f);
@@ -93,15 +111,20 @@ int main()
         window.pollEvents();
         float t = std::chrono::duration<float>(std::chrono::steady_clock::now().time_since_epoch()).count();
         glm::mat4 model = glm::rotate(glm::mat4(1.0f), t, glm::vec3(1,0,1));
-        material.setMVP( camera.getViewMatrix(), camera.getProjectionMatrix());
+        material.setMVP(camera.getViewMatrix(), camera.getProjectionMatrix());
+        spriteMaterial.setMVP(camera.getViewMatrix(), camera.getProjectionMatrix());
+
+        glm::mat4 spriteModel = glm::translate(glm::mat4(1.0f), glm::vec3(-1.5f, 0.0f, 0.0f));
 
         renderGraph.beginFrame();
 
         renderGraph.beginPresentPass();
-        // renderGraph.draw(triangle, material);
         renderGraph.draw(cube, material, model);
+        renderGraph.draw(triangle, spriteMaterial, spriteModel);
         renderGraph.endRenderPass();
 
         renderGraph.endFrame();
     }
+
+    ctx.waitIdle();
 }

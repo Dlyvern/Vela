@@ -2,11 +2,13 @@
 #include "MaterialImpl.hpp"
 #include "TextureImpl.hpp"
 #include "Vela/Graphics/Texture.hpp"
+#include "Vela/Graphics/RenderGraph.hpp"
+#include "RenderGraphImpl.hpp"
 
 namespace vela::graphics
 {
-    Material::Material(core::Context& ctx, const std::string& vertShaderPath, const std::string& fragShaderPath) :
-    m_impl(std::make_unique<backend::MaterialImpl>(ctx, vertShaderPath, fragShaderPath))
+    Material::Material(core::Context& ctx, RenderGraph& renderGraph, const MaterialDescription& description) :
+    m_impl(std::make_unique<backend::MaterialImpl>(ctx, *renderGraph.impl(), description))
     {
 
     }

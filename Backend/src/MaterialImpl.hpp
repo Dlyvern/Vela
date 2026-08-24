@@ -18,10 +18,13 @@ namespace vela::core
 
 namespace vela::backend
 {
+    class RenderGraphImpl;
+
     class MaterialImpl
     {
     public:
-        MaterialImpl(core::Context& context, const std::string& vertShaderPath, const std::string& fragShaderPath);
+        MaterialImpl(core::Context& context, RenderGraphImpl& renderGraph,
+            const graphics::MaterialDescription& description);
         ~MaterialImpl();
 
         VkPipeline getPipeline() const;
@@ -32,6 +35,7 @@ namespace vela::backend
         void setMVP(const glm::mat4& view, const glm::mat4& projection);
     private:
         static VkShaderModule createShaderModule(VkDevice device, const std::vector<char>& code);
+        static VkFormat toVkFormat(graphics::VertexAttributeFormat format);
 
         VmaAllocator m_allocator{VK_NULL_HANDLE};
         VkBuffer m_mvpBuffer{VK_NULL_HANDLE};

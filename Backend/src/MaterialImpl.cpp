@@ -3,6 +3,9 @@
 #include "Vela/Core/Context.hpp"
 #include "ContextImpl.hpp"
 #include "Vela/Graphics/Vertex.hpp"
+#include "RenderGraphImpl.hpp"
+
+#include <stdexcept>
 
 #include <cstring>
 #include <vulkan/vulkan_core.h>
@@ -11,7 +14,21 @@ struct CameraUBO { glm::mat4 view, projection; };
 
 namespace vela::backend
 {
-    MaterialImpl::MaterialImpl(core::Context& context, const std::string& vertShaderPath, const std::string& fragShaderPath) : m_device(context.impl()->getDevice())
+    VkFormat MaterialImpl::toVkFormat(graphics::VertexAttributeFormat format)
+    {
+        switch (format)
+        {
+            case graphics::VertexAttributeFormat::eFLOAT:  return VK_FORMAT_R32_SFLOAT;
+            case graphics::VertexAttributeFormat::eFLOAT2: return VK_FORMAT_R32G32_SFLOAT;
+            case graphics::VertexAttributeFormat::eFLOAT3: return VK_FORMAT_R32G32B32_SFLOAT;
+            case graphics::VertexAttributeFormat::eFLOAT4: return VK_FORMAT_R32G32B32A32_SFLOAT;
+        }
+
+        throw std::runtime_error("Unknown vertex attribute format");
+    }
+
+    MaterialImpl::MaterialImpl(core::Context& context, RenderGraphImpl& renderGraph,
+        const graphics::MaterialDescription& description) : m_device(context.impl()->getDevice())
     {
         m_allocator = context.impl()->getAllocator();
 
@@ -90,8 +107,8 @@ namespace vela::backend
 
         vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
 
-        auto vertCode = utilities::resources::readFileShader(vertShaderPath);
-        auto fragCode = utilities::resources::readFileShader(fragShaderPath);
+        auto vertCode = utilities::resources::readFileShader(description.vertexShaderPath);
+        auto fragCode = utilities::resources::readFileShader(description.fragmentShaderPath);
         
         auto vertShader = createShaderModule(m_device, vertCode);
         auto fragShader = createShaderModule(m_device, fragCode);
@@ -122,37 +139,27 @@ namespace vela::backend
 
         VkPipelineShaderStageCreateInfo shaderStageCI[] = { vertStageCI, fragStageCI };
 
-        // VkVertexInputBindingDescription binding{};
-        // binding.binding = 0;
-        // binding.stride = sizeof(vela::graphics::SpriteVertex);
-        // binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-        // std::vector<VkVertexInputAttributeDescription> posAttr(2);
-        // posAttr[0].binding = 0;
-        // posAttr[0].location = 0;                  
-        // posAttr[0].format = VK_FORMAT_R32G32_SFLOAT;
-        // posAttr[0].offset = offsetof(graphics::SpriteVertex, position);
-
-        // posAttr[1].binding = 0;
-        // posAttr[1].location = 1;                  
-        // posAttr[1].format = VK_FORMAT_R32G32_SFLOAT;
-        // posAttr[1].offset = offsetof(graphics::SpriteVertex, uv);
+        if (description.vertexLayout.stride == 0 || description.vertexLayout.attributes.empty())
+            throw std::runtime_error("Material requires a vertex layout");
 
         VkVertexInputBindingDescription binding{};
         binding.binding = 0;
-        binding.stride = sizeof(vela::graphics::StaticVertex);
+        binding.stride = description.vertexLayout.stride;
         binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-        std::vector<VkVertexInputAttributeDescription> posAttr(2);
-        posAttr[0].binding = 0;
-        posAttr[0].location = 0;                  
-        posAttr[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-        posAttr[0].offset = offsetof(graphics::StaticVertex, position);
+        std::vector<VkVertexInputAttributeDescription> posAttr;
+        posAttr.reserve(description.vertexLayout.attributes.size());
 
-        posAttr[1].binding = 0;
-        posAttr[1].location = 1;                  
-        posAttr[1].format = VK_FORMAT_R32G32_SFLOAT;
-        posAttr[1].offset = offsetof(graphics::StaticVertex, uv);
+        for (const graphics::VertexAttribute& attribute : description.vertexLayout.attributes)
+        {
+            VkVertexInputAttributeDescription vkAttribute{};
+            vkAttribute.binding = 0;
+            vkAttribute.location = attribute.location;
+            vkAttribute.format = toVkFormat(attribute.format);
+            vkAttribute.offset = attribute.offset;
+
+            posAttr.push_back(vkAttribute);
+        }
 
         VkPipelineVertexInputStateCreateInfo vertexInput{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
         vertexInput.vertexBindingDescriptionCount = 1;
@@ -182,21 +189,24 @@ namespace vela::backend
             VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         blendAttachment.blendEnable = VK_FALSE;
 
+        const std::vector<VkPipelineColorBlendAttachmentState> blendAttachments(
+            renderGraph.getColorFormats().size(), blendAttachment);
+
         VkPipelineColorBlendStateCreateInfo colorBlend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-        colorBlend.attachmentCount = 1;
-        colorBlend.pAttachments = &blendAttachment;
+        colorBlend.attachmentCount = static_cast<uint32_t>(blendAttachments.size());
+        colorBlend.pAttachments = blendAttachments.data();
 
         VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
         VkPipelineDynamicStateCreateInfo dynamicState{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
         dynamicState.dynamicStateCount = 2;
         dynamicState.pDynamicStates = dynamicStates;
 
-        VkFormat colorFormat = context.impl()->getSwapchainFormat();
+        const std::vector<VkFormat>& colorFormats = renderGraph.getColorFormats();
 
         VkPipelineRenderingCreateInfo renderingCI{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
-        renderingCI.colorAttachmentCount = 1;
-        renderingCI.pColorAttachmentFormats = &colorFormat;
-        renderingCI.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
+        renderingCI.colorAttachmentCount = static_cast<uint32_t>(colorFormats.size());
+        renderingCI.pColorAttachmentFormats = colorFormats.data();
+        renderingCI.depthAttachmentFormat = renderGraph.getDepthFormat();
 
         VkPipelineDepthStencilStateCreateInfo depthCI{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
         depthCI.depthTestEnable = VK_TRUE;

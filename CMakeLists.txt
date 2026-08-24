@@ -11,8 +11,6 @@ option(VELA_WITH_GLFW "Build the GLFW windowing backend" ON)
 option(VELA_BUILD_SHARED "" OFF)
 option(VELA_BUILD_EXAMPLES "" ON)
 
-find_program(GLSLC glslc REQUIRED)
-
 include(${CMAKE_CURRENT_SOURCE_DIR}/CMake/Shaders.cmake)
 
 add_subdirectory(vendor)

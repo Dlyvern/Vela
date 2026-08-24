@@ -1,24 +1,64 @@
 #ifndef VELA_GRAPHICS_VERTEX_HPP
 #define VELA_GRAPHICS_VERTEX_HPP
 
+#include "Vela/Graphics/VertexLayout.hpp"
+
+#include <cstddef>
+
 namespace vela::graphics
 {
     struct SpriteVertex
     {
         float position[2];
         float uv[2];
+
+        static VertexLayout layout()
+        {
+            return VertexLayout
+            {
+                sizeof(SpriteVertex),
+                {
+                    {0, VertexAttributeFormat::eFLOAT2, offsetof(SpriteVertex, position)},
+                    {1, VertexAttributeFormat::eFLOAT2, offsetof(SpriteVertex, uv)}
+                }
+            };
+        }
     };
 
     struct StaticVertex
     {
         float position[3];
         float uv[2];
+
+        static VertexLayout layout()
+        {
+            return VertexLayout
+            {
+                sizeof(StaticVertex),
+                {
+                    {0, VertexAttributeFormat::eFLOAT3, offsetof(StaticVertex, position)},
+                    {1, VertexAttributeFormat::eFLOAT2, offsetof(StaticVertex, uv)}
+                }
+            };
+        }
     };
 
     struct SkinnedVertex
     {
         float position[3];
         float uv[2];
+
+        static VertexLayout layout()
+        {
+            return VertexLayout
+            {
+                sizeof(SkinnedVertex),
+                {
+                    {0, VertexAttributeFormat::eFLOAT3, offsetof(SkinnedVertex, position)},
+                    {1, VertexAttributeFormat::eFLOAT2, offsetof(SkinnedVertex, uv)}
+                }
+            };
+        }
     };
 } //namespace vela::graphics
 

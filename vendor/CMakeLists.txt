@@ -3,9 +3,7 @@ set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "Disable GLFW examples" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "Disable GLFW tests" FORCE)
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "Disable GLFW docs" FORCE)
 set(GLFW_INSTALL OFF CACHE BOOL "Disable GLFW install target" FORCE)
-if(WIN32)
-    set(GLFW_LIBRARY_TYPE SHARED CACHE STRING "Build GLFW as a shared library on Windows" FORCE)
-endif()
+set(GLFW_LIBRARY_TYPE STATIC CACHE STRING "Build GLFW as a static library" FORCE)
 add_subdirectory(glfw)
 
 # volk

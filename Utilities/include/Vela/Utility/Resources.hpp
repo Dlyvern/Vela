@@ -1,10 +1,20 @@
 #ifndef VELA_UTILITIES_RESOURCES_HPP
 #define VELA_UTILITIES_RESOURCES_HPP
 
+#if defined(_WIN32)
+    #define WIN32_LEAN_AND_MEAN
+    #define NOMINMAX
+    #include <windows.h>
+#elif defined(__APPLE__)
+    #include <mach-o/dyld.h>
+#endif
+
 #include <filesystem>
 #include <vector>
 #include <string>
 #include <fstream>
+#include <stdexcept>
+#include <cstdint>
 
 namespace vela::utilities::resources
 {

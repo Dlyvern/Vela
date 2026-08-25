@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <vector>
 #include <unordered_map>
+#include <array>
 #include "glm/mat4x4.hpp"
 
 namespace vela::core

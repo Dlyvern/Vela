@@ -31,12 +31,9 @@ namespace vela::backend
 
         const std::vector<VkImage>& getSwapchainImages() const;
         const std::vector<VkImageView>& getSwapchainImageViews() const;
-        VkImage getDepthImage() const;
-        VkImageView getDepthImageView() const;
         
         VkExtent2D getSwapchainExtent() const;
         VkFormat getSwapchainFormat() const;
-        VkFormat getDepthFormat() const;
 
         bool isSwapchainStale() const;
 
@@ -44,7 +41,6 @@ namespace vela::backend
         void createDevice();
         void createSwapchain();
         void createSwapchainImageViews();
-        void createDepthImage();
         void createCommandPool();
         void createAllocator();
         void recreateSwapchain();
@@ -73,7 +69,6 @@ namespace vela::backend
 
         //TODO expose it to public API later
         static constexpr uint32_t m_vulkanApiVersion{VK_API_VERSION_1_3};
-        static constexpr VkFormat m_depthFormat{VK_FORMAT_D32_SFLOAT};
 
         core::ContextPreferences m_contextPreferences;
 
@@ -95,10 +90,6 @@ namespace vela::backend
 
         std::vector<VkImage> m_swapchainImages;
         std::vector<VkImageView> m_swapchainImageViews;
-
-        VkImage m_depthImage{VK_NULL_HANDLE};
-        VmaAllocation m_depthImageAllocation{VK_NULL_HANDLE};
-        VkImageView m_depthImageView{VK_NULL_HANDLE};
 
         VkCommandPool m_commandPool{VK_NULL_HANDLE};
 

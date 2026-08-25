@@ -9,6 +9,8 @@
 
 #include "Vela/Graphics/Material.hpp"
 
+#include "Pipeline.hpp"
+
 #include "glm/mat4x4.hpp"
 
 namespace vela::core
@@ -27,25 +29,24 @@ namespace vela::backend
             const graphics::MaterialDescription& description);
         ~MaterialImpl();
 
-        VkPipeline getPipeline() const;
         VkPipelineLayout getPipelineLayout() const;
         VkDescriptorSet getDescriptorSet() const;
+        const PipelineDescription& getPipelineDescription() const;
+        VkDescriptorSetLayout getDescriptorSetLayout() const;
 
         void setAlbedoTexture(VkImageView imageView, VkSampler sampler);
-        void setMVP(const glm::mat4& view, const glm::mat4& projection);
+
+        const graphics::MaterialDescription& getMaterialDescription() const;
     private:
-        static VkShaderModule createShaderModule(VkDevice device, const std::vector<char>& code);
-        static VkFormat toVkFormat(graphics::VertexAttributeFormat format);
-
         VmaAllocator m_allocator{VK_NULL_HANDLE};
-        VkBuffer m_mvpBuffer{VK_NULL_HANDLE};
-        VmaAllocation m_mvpAllocation{VK_NULL_HANDLE};
-        void* m_mvpMapped{nullptr};
 
+        graphics::MaterialDescription m_materialDescription;
+        PipelineDescription m_pipelineDescription;
+
+        //TODO Every material should not create additional VkDescriptorPool
         VkDescriptorPool m_descriptorPool{VK_NULL_HANDLE};
         VkDescriptorSet  m_descriptorSet{VK_NULL_HANDLE};
         VkDescriptorSetLayout m_descriptorSetLayout{VK_NULL_HANDLE};
-        VkPipeline m_pipeline{VK_NULL_HANDLE};
         VkPipelineLayout m_pipelineLayout{VK_NULL_HANDLE};
         VkDevice m_device{VK_NULL_HANDLE};
     };

@@ -11,11 +11,17 @@
 
 #include <array>
 #include <stdexcept>
+#include <iostream>
+#include <cstring>
+
+struct CameraUBO { glm::mat4 view, projection; };
+
 
 namespace vela::backend
 {
     RenderGraphImpl::RenderGraphImpl(core::Context& context) : m_context(context),
-    m_device(context.impl()->getDevice()), m_graphicsQueue(context.impl()->getGraphicsQueue())
+    m_device(context.impl()->getDevice()), m_graphicsQueue(context.impl()->getGraphicsQueue()),
+    m_layoutCache(context.impl()->getDevice()), m_pipelineCache(context.impl()->getDevice())
     {
         VkSemaphoreCreateInfo semaphoreCI{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
         VkFenceCreateInfo fenceCI{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
@@ -35,8 +41,7 @@ namespace vela::backend
 
         createSwapchainSyncObjects();
 
-        m_presentPass = std::make_unique<PresentPass>(context.impl()->getSwapchainFormat(),
-            context.impl()->getDepthFormat());
+        buildRenderGraphPasses();
 
         m_commandBuffers.resize(k_framesInFlight);
         VkCommandBufferAllocateInfo commandBufferAI{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
@@ -46,6 +51,145 @@ namespace vela::backend
 
         if(VkResult result = vkAllocateCommandBuffers(m_device, &commandBufferAI, m_commandBuffers.data()); result != VK_SUCCESS)
             throw std::runtime_error("Failed to allocat command buffers");
+        
+        VkDescriptorSetLayoutBinding binding{};
+        binding.binding = 0;
+        binding.descriptorCount = 1;
+        binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+        m_perViewDescriptorSetLayout = getLayoutCache().getDescriptorSetLayout({binding});
+
+        std::vector<VkDescriptorPoolSize> poolSizes(1);
+        poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSizes[0].descriptorCount = k_framesInFlight;
+
+        VkDescriptorPoolCreateInfo descriptorPoolCI{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        descriptorPoolCI.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+        descriptorPoolCI.pPoolSizes = poolSizes.data();
+        descriptorPoolCI.maxSets = k_framesInFlight;
+
+        if(VkResult result = vkCreateDescriptorPool(m_device, &descriptorPoolCI, nullptr, &m_descriptorPool); result != VK_SUCCESS)
+            throw std::runtime_error("Failed to create descriptor pool");
+
+        std::array<VkDescriptorSetLayout, k_framesInFlight> layouts{};
+        layouts.fill(m_perViewDescriptorSetLayout);
+
+
+        VkDescriptorSetAllocateInfo descriptorSetAI{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        descriptorSetAI.descriptorPool = m_descriptorPool;
+        descriptorSetAI.descriptorSetCount = static_cast<uint32_t>(m_perViewDescriptorSets.size());
+        descriptorSetAI.pSetLayouts = layouts.data();
+
+        if(VkResult result = vkAllocateDescriptorSets(m_device, &descriptorSetAI, m_perViewDescriptorSets.data()); result != VK_SUCCESS)
+            throw std::runtime_error("Failed to allocate descriptor sets");
+
+        VkDeviceSize imageSize = sizeof(CameraUBO);
+
+        VkBufferCreateInfo mvpBufferCI{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        mvpBufferCI.size = imageSize;
+        mvpBufferCI.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        mvpBufferCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        VmaAllocationCreateInfo mvpBufferAllocationCI{};
+        mvpBufferAllocationCI.usage = VMA_MEMORY_USAGE_AUTO;
+        mvpBufferAllocationCI.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+                            | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        VmaAllocationInfo info{};
+
+        std::array<VkDescriptorBufferInfo, k_framesInFlight> bufferInfos{};
+        std::array<VkWriteDescriptorSet, k_framesInFlight> writes{};
+
+        for(size_t index = 0; index < writes.size(); ++index)
+        {
+            if(VkResult result = vmaCreateBuffer(context.impl()->getAllocator(), &mvpBufferCI, &mvpBufferAllocationCI,
+            &m_perViewBuffer[index], &m_perViewBufferAllocation[index], &info); result != VK_SUCCESS)
+                throw std::runtime_error("Faild to allocate buffer");
+
+            m_perViewMapped[index] = info.pMappedData;
+
+            bufferInfos[index].buffer = m_perViewBuffer[index];
+            bufferInfos[index].offset = 0;
+            bufferInfos[index].range = sizeof(CameraUBO);
+
+            writes[index].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[index].dstSet = m_perViewDescriptorSets[index];
+            writes[index].dstBinding = 0;
+            writes[index].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            writes[index].descriptorCount = 1;
+            writes[index].pBufferInfo = &bufferInfos[index];
+        }
+
+        vkUpdateDescriptorSets(m_device, writes.size(), writes.data(), 0, nullptr);
+    }
+    
+    void RenderGraphImpl::updatePerViewDescriptors(const glm::mat4& view, const glm::mat4& projection)
+    {
+        CameraUBO mvp{view, projection };
+        std::memcpy(m_perViewMapped[m_frameIndex], &mvp, sizeof(CameraUBO));
+    }
+
+    void RenderGraphImpl::buildRenderGraphPasses()
+    {
+        m_presentPass = std::make_unique<PresentPass>(m_context.impl()->getSwapchainFormat());
+
+        allocateRenderGraphPassOutputs(*m_presentPass);
+    }
+
+    void RenderGraphImpl::allocateRenderGraphPassOutputs(const Pass& pass)
+    {
+        const auto& outputs = pass.outputs();
+
+        for(const auto& output : outputs)
+        {
+            if(auto it = m_attachments.find(output.name); it != m_attachments.end())
+            {
+                std::cerr << "Attachment with " << output.name << " name already exists! Skiping it\n";
+                continue;
+            }
+
+            Attachment attachment{};
+            attachment.extent.width = m_context.impl()->getSwapchainExtent().width * output.scale;
+            attachment.extent.height = m_context.impl()->getSwapchainExtent().height * output.scale;
+            attachment.format = output.format;
+
+            VkImageCreateInfo imageCI{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+            imageCI.imageType = VK_IMAGE_TYPE_2D;
+            imageCI.extent = {static_cast<uint32_t>(attachment.extent.width), static_cast<uint32_t>(attachment.extent.height), 1};
+            imageCI.mipLevels = 1;
+            imageCI.arrayLayers = 1;
+            imageCI.format = attachment.format;
+            imageCI.tiling = VK_IMAGE_TILING_OPTIMAL; 
+            imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            imageCI.usage = output.usage;
+            imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
+            imageCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+            VmaAllocationCreateInfo imageAllocCI{};
+            imageAllocCI.usage = VMA_MEMORY_USAGE_AUTO;
+
+            if (vmaCreateImage(m_context.impl()->getAllocator(), &imageCI, &imageAllocCI, 
+            &attachment.image, &attachment.allocation, nullptr) != VK_SUCCESS)
+                throw std::runtime_error("Failed to create depth image");
+
+            VkImageViewCreateInfo imageViewCI{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+            imageViewCI.format = attachment.format;
+            imageViewCI.image = attachment.image;
+            imageViewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            imageViewCI.components = { VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+                        VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY };
+
+            VkImageAspectFlags aspectFlags = m_presentPass->getDepthFormat() ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+            
+            imageViewCI.subresourceRange = { aspectFlags, 0, 1, 0, 1 };
+
+            if (VkResult result = vkCreateImageView(m_device, &imageViewCI, nullptr, &attachment.view);
+                    result != VK_SUCCESS)
+                throw std::runtime_error("Failed to create image view");
+
+            m_attachments[output.name] = attachment;
+        }
     }
 
     void RenderGraphImpl::createSwapchainSyncObjects()
@@ -159,12 +303,11 @@ namespace vela::backend
 
     PassContext RenderGraphImpl::makePassContext() const
     {
-        PassContext passContext;
+        PassContext passContext{.attachments = m_attachments};
+
         passContext.commandBuffer = m_currentCommandBuffer;
         passContext.colorImage = m_context.impl()->getSwapchainImages()[m_currentImageIndex];
         passContext.colorImageView = m_context.impl()->getSwapchainImageViews().at(m_currentImageIndex);
-        passContext.depthImage = m_context.impl()->getDepthImage();
-        passContext.depthImageView = m_context.impl()->getDepthImageView();
         passContext.extent = m_context.impl()->getSwapchainExtent();
 
         return passContext;
@@ -175,9 +318,14 @@ namespace vela::backend
         return m_presentPass->getColorFormats();
     }
 
-    VkFormat RenderGraphImpl::getDepthFormat() const
+    LayoutCache& RenderGraphImpl::getLayoutCache()
     {
-        return m_presentPass->getDepthFormat();
+        return m_layoutCache;
+    }
+
+    VkDescriptorSetLayout RenderGraphImpl::getPerViewDescriptorSetLayout() const
+    {
+        return m_perViewDescriptorSetLayout;
     }
 
     void RenderGraphImpl::beginPresentPass(float r, float g, float b, float a)
@@ -207,6 +355,24 @@ namespace vela::backend
         createSwapchainSyncObjects();
 
         m_presentPass->setColorFormat(m_context.impl()->getSwapchainFormat());
+        
+        //TODO Destroy resources that only depend on swapchain size
+        destroyAllAttachments();
+
+        allocateRenderGraphPassOutputs(*m_presentPass);
+    }
+    
+    void RenderGraphImpl::destroyAllAttachments()
+    {
+        for(auto& [_, attachment] : m_attachments)
+        {
+            vkDestroyImageView(m_device, attachment.view, nullptr);
+            vmaDestroyImage(m_context.impl()->getAllocator(), attachment.image, attachment.allocation);
+            attachment.view = VK_NULL_HANDLE;
+            attachment.image = VK_NULL_HANDLE;
+        }
+
+        m_attachments.clear();
     }
 
     void RenderGraphImpl::draw(const graphics::Mesh& mesh, const graphics::Material& material, const glm::mat4& model)
@@ -214,18 +380,28 @@ namespace vela::backend
         if(!m_isFrameValid)
             return;
 
-        vkCmdBindPipeline(m_currentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, material.impl()->getPipeline());
+        const PipelineDescription& pipelineDescription = material.impl()->getPipelineDescription();
 
-        auto descriptorSet = material.impl()->getDescriptorSet();
+        VkPipeline pipeline = m_pipelineCache.get(pipelineDescription, *m_presentPass);
+
+        vkCmdBindPipeline(m_currentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+        VkPipelineLayout pipelineLayout = pipelineDescription.layout;
+
+        const std::array<VkDescriptorSet, 2> descriptorSets
+        {
+            m_perViewDescriptorSets[m_frameIndex],
+            material.impl()->getDescriptorSet()
+        };
 
         vkCmdBindDescriptorSets(m_currentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            material.impl()->getPipelineLayout(), 0, 1, &descriptorSet, 0, nullptr);
+            pipelineLayout, 0, static_cast<uint32_t>(descriptorSets.size()), descriptorSets.data(), 0, nullptr);
 
         VkBuffer buffers[] = { mesh.impl()->getBuffer()};
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(m_currentCommandBuffer, 0, 1, buffers, offsets);
 
-        vkCmdPushConstants(m_currentCommandBuffer, material.impl()->getPipelineLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4),
+        vkCmdPushConstants(m_currentCommandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4),
         &model);
 
         vkCmdDraw(m_currentCommandBuffer, mesh.impl()->getVertexCount(), 1, 0, 0);
@@ -242,6 +418,13 @@ namespace vela::backend
 
         for (VkFence fence : m_inFlightFences)
             vkDestroyFence(m_device, fence, nullptr);
+
+        for (size_t index = 0; index < m_perViewBuffer.size(); ++index)
+            vmaDestroyBuffer(m_context.impl()->getAllocator(), m_perViewBuffer[index], m_perViewBufferAllocation[index]);
+
+        vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
+
+        destroyAllAttachments();
     }
 
 } //namespace vela::backend

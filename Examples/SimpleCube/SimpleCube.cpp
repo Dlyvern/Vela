@@ -111,8 +111,8 @@ int main()
         window.pollEvents();
         float t = std::chrono::duration<float>(std::chrono::steady_clock::now().time_since_epoch()).count();
         glm::mat4 model = glm::rotate(glm::mat4(1.0f), t, glm::vec3(1,0,1));
-        material.setMVP(camera.getViewMatrix(), camera.getProjectionMatrix());
-        spriteMaterial.setMVP(camera.getViewMatrix(), camera.getProjectionMatrix());
+
+        renderGraph.updatePerViewDescriptors(camera.getViewMatrix(), camera.getProjectionMatrix());
 
         glm::mat4 spriteModel = glm::translate(glm::mat4(1.0f), glm::vec3(-1.5f, 0.0f, 0.0f));
 

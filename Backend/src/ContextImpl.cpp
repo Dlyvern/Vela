@@ -20,9 +20,6 @@ namespace vela::backend
     {
         vkDeviceWaitIdle(m_device);
 
-        vkDestroyImageView(m_device, m_depthImageView, nullptr);
-        vmaDestroyImage(m_allocator, m_depthImage, m_depthImageAllocation);
-
         // After every allocation it owns, never before.
         vmaDestroyAllocator(m_allocator);
 
@@ -75,9 +72,6 @@ namespace vela::backend
             vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &caps);
         }
 
-        vkDestroyImageView(m_device, m_depthImageView, nullptr);
-        vmaDestroyImage(m_allocator, m_depthImage, m_depthImageAllocation);
-
         for (auto v  : m_swapchainImageViews)
             vkDestroyImageView(m_device, v, nullptr);
 
@@ -85,7 +79,6 @@ namespace vela::backend
 
         createSwapchain();
         createSwapchainImageViews();
-        createDepthImage();
     }
 
     void ContextImpl::createCommandPool()
@@ -101,11 +94,6 @@ namespace vela::backend
     VkFormat ContextImpl::getSwapchainFormat() const
     {
         return m_swapchainFormat;
-    }
-
-    VkFormat ContextImpl::getDepthFormat() const
-    {
-        return m_depthFormat;
     }
 
     void ContextImpl::createSwapchain()
@@ -225,39 +213,6 @@ namespace vela::backend
                     result != VK_SUCCESS)
                 throw std::runtime_error("Failed to create image view");
         }
-    }
-
-    void ContextImpl::createDepthImage()
-    {
-        VkImageCreateInfo imageCI{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-        imageCI.imageType = VK_IMAGE_TYPE_2D;
-        imageCI.extent = {static_cast<uint32_t>(m_swapchainExtent.width), static_cast<uint32_t>(m_swapchainExtent.height), 1};
-        imageCI.mipLevels = 1;
-        imageCI.arrayLayers = 1;
-        imageCI.format = m_depthFormat;
-        imageCI.tiling = VK_IMAGE_TILING_OPTIMAL; 
-        imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        imageCI.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-        imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
-        imageCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        VmaAllocationCreateInfo imageAllocCI{};
-        imageAllocCI.usage = VMA_MEMORY_USAGE_AUTO;
-
-        if (vmaCreateImage(m_allocator, &imageCI, &imageAllocCI, &m_depthImage, &m_depthImageAllocation, nullptr) != VK_SUCCESS)
-            throw std::runtime_error("Failed to create depth image");
-
-        VkImageViewCreateInfo imageViewCI{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-        imageViewCI.format = m_depthFormat;
-        imageViewCI.image = m_depthImage;
-        imageViewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        imageViewCI.components = { VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
-                      VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY };
-        imageViewCI.subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 };
-
-        if (VkResult result = vkCreateImageView(m_device, &imageViewCI, nullptr, &m_depthImageView);
-                result != VK_SUCCESS)
-            throw std::runtime_error("Failed to create image view");
     }
 
     void ContextImpl::pickPhysicalDevice()
@@ -452,16 +407,6 @@ namespace vela::backend
         vkGetDeviceQueue(m_device, m_queueFamilyIndices.graphics.value(), 0, &m_graphicsQueue);
         vkGetDeviceQueue(m_device, m_queueFamilyIndices.compute.value(), 0, &m_computeQueue);
         vkGetDeviceQueue(m_device, m_queueFamilyIndices.transfer.value(), 0, &m_transferQueue);
-    }
-
-    VkImage ContextImpl::getDepthImage() const
-    {
-        return m_depthImage;
-    }
-
-    VkImageView ContextImpl::getDepthImageView() const
-    {
-        return m_depthImageView;
     }
 
     VkExtent2D ContextImpl::getSwapchainExtent() const

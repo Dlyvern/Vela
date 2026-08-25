@@ -13,14 +13,14 @@ namespace vela::graphics
 
     }
 
+    const MaterialDescription& Material::getMaterialDescription() const
+    {
+        return m_impl->getMaterialDescription();
+    }
+
     void Material::setAlbedoTexture(const Texture& texture)
     {
         m_impl->setAlbedoTexture(texture.impl()->getImageView(), texture.impl()->getSampler());
-    }
-
-    void Material::setMVP(const glm::mat4& view, const glm::mat4& projection)
-    {
-        m_impl->setMVP(view, projection);;
     }
 
     backend::MaterialImpl* Material::impl() const

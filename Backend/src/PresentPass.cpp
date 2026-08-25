@@ -4,8 +4,8 @@
 
 namespace vela::backend
 {
-    PresentPass::PresentPass(VkFormat colorFormat, VkFormat depthFormat)
-        : m_colorFormats{colorFormat}, m_depthFormat(depthFormat)
+    PresentPass::PresentPass(VkFormat colorFormat)
+        : m_colorFormats{colorFormat}
     {
     }
 
@@ -28,9 +28,19 @@ namespace vela::backend
     {
         return m_depthFormat;
     }
+    
+    std::vector<AttachmentDescription> PresentPass::outputs() const
+    {
+        return {
+            AttachmentDescription{.name = "depth", .format = m_depthFormat, .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT}
+        };
+    }
 
     void PresentPass::begin(const PassContext& passContext)
     {
+        //TODO make it safer
+        const auto& depthAttachmentAllocated = (*passContext.attachments.find("depth")).second;
+
         VkRenderingAttachmentInfo colorAttachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
         colorAttachment.imageView = passContext.colorImageView;
         colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -39,7 +49,7 @@ namespace vela::backend
         colorAttachment.clearValue = m_clearValue;
 
         VkRenderingAttachmentInfo depthAttachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-        depthAttachment.imageView = passContext.depthImageView;
+        depthAttachment.imageView = depthAttachmentAllocated.view;
         depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
         depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -78,7 +88,7 @@ namespace vela::backend
         VkImageMemoryBarrier2 toDepth{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         toDepth.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         toDepth.newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        toDepth.image = passContext.depthImage;
+        toDepth.image = depthAttachmentAllocated.image;
         toDepth.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
         toDepth.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         toDepth.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;

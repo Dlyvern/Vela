@@ -20,7 +20,6 @@ namespace vela::graphics
     class Material;
 } // namespace vela::graphics
 
-
 namespace vela::graphics
 {
     class RenderGraph
@@ -34,10 +33,10 @@ namespace vela::graphics
         RenderGraph(const RenderGraph&) = delete;
         RenderGraph& operator=(const RenderGraph&) = delete;
 
-
         void beginFrame();
         void beginPresentPass(float r = 0.1f, float g = 0.2f, float b = 0.4f, float a = 1.0f);
         void draw(const graphics::Mesh& mesh, const graphics::Material& material, const glm::mat4& model);
+        void updatePerViewDescriptors(const glm::mat4& view, const glm::mat4& projection);
         void endRenderPass();
         void endFrame();
 
@@ -46,6 +45,7 @@ namespace vela::graphics
         ~RenderGraph();
 
     private:
+
         std::unique_ptr<backend::RenderGraphImpl> m_impl{nullptr};
     };
 

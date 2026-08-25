@@ -46,9 +46,10 @@ namespace vela::graphics
         Material& operator=(const Material&) = delete;
 
         void setAlbedoTexture(const Texture& texture);
-        void setMVP(const glm::mat4& view, const glm::mat4& projection);
 
         backend::MaterialImpl* impl() const;
+
+        const MaterialDescription& getMaterialDescription() const;
     private:
         std::unique_ptr<backend::MaterialImpl> m_impl{nullptr};
     };

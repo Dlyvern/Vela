@@ -19,6 +19,11 @@ namespace vela::graphics
         m_impl->beginFrame();
     }
 
+    void RenderGraph::updatePerViewDescriptors(const glm::mat4& view, const glm::mat4& projection)
+    {
+        m_impl->updatePerViewDescriptors(view, projection);
+    }
+
     void RenderGraph::beginPresentPass(float r, float g, float b, float a)
     {
         m_impl->beginPresentPass(r, g, b, a);

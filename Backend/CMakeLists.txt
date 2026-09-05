@@ -22,7 +22,6 @@ target_link_libraries(VelaBackend
     volk_headers
     VulkanMemoryAllocator
     volk
-    VelaUtility
-    stb_image
-    glm::glm
+    VelaMath
+    VelaFoundation
 )

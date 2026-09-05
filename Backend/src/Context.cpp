@@ -1,6 +1,8 @@
 #include "Vela/Core/Context.hpp"
 #include "ContextImpl.hpp"
 
+#include <stdexcept>
+
 #include "Vela/Core/Window.hpp"
 #include "MeshImpl.hpp"
 #include "MaterialImpl.hpp"
@@ -22,17 +24,38 @@ namespace vela::core
         m_contextImpl->waitIdle();
     }
 
-    void Context::createSurfaceFor(Window& window)
+    Result<Context> Context::create(Window& window, const ContextPreferences& contextPreferences)
     {
-        auto surface = window.getWindowBackend().createSurface(m_contextImpl->getInstance(), window.getNativeHandle());
-        m_contextImpl->setSurface(static_cast<VkSurfaceKHR>(surface));
-        m_contextImpl->setNativeWindow(window.getNativeHandle());
-        m_contextImpl->pickPhysicalDevice(); 
-        m_contextImpl->createDevice();
-        m_contextImpl->createAllocator();
-        m_contextImpl->createSwapchain();
-        m_contextImpl->createSwapchainImageViews();
-        m_contextImpl->createCommandPool();
+        try
+        {
+            return Context(window.getWindowBackend(), contextPreferences);
+        }
+        catch (const std::exception& error)
+        {
+            return Error{ErrorCode::DeviceCreationFailed, error.what()};
+        }
+    }
+
+    Status Context::attach(Window& window)
+    {
+        try
+        {
+            auto surface = window.getWindowBackend().createSurface(m_contextImpl->getInstance(), window.getNativeHandle());
+            m_contextImpl->setSurface(static_cast<VkSurfaceKHR>(surface));
+            m_contextImpl->setNativeWindow(window.getNativeHandle());
+            m_contextImpl->pickPhysicalDevice();
+            m_contextImpl->createDevice();
+            m_contextImpl->createAllocator();
+            m_contextImpl->createSwapchain();
+            m_contextImpl->createSwapchainImageViews();
+            m_contextImpl->createCommandPool();
+        }
+        catch (const std::exception& error)
+        {
+            return Error{ErrorCode::SurfaceCreationFailed, error.what()};
+        }
+
+        return {};
     }
 
     Context::Context(Context&&) noexcept = default;

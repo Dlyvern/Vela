@@ -3,10 +3,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <iostream>
-
-#include "Vela/Utility/Resources.hpp"
-
-#include "glm/mat4x4.hpp"
+#include <vector>
 
 namespace
 {
@@ -34,16 +31,11 @@ namespace
         return hashBytes(&value, sizeof(T), seed);
     }
 
-    uint64_t hashString(const std::string& value, uint64_t seed)
-    {
-        return hashBytes(value.data(), value.size(), seed);
-    }
-
-    VkShaderModule createShaderModule(VkDevice device, const std::vector<char>& code)
+    VkShaderModule createShaderModule(VkDevice device, std::span<const uint32_t> code)
     {
         VkShaderModuleCreateInfo shaderModuleCI{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-        shaderModuleCI.codeSize = static_cast<uint32_t>(code.size());
-        shaderModuleCI.pCode = reinterpret_cast<const uint32_t*>(code.data());
+        shaderModuleCI.codeSize = code.size_bytes();
+        shaderModuleCI.pCode = code.data();
         
         VkShaderModule module;
 
@@ -57,10 +49,10 @@ namespace
     {
         switch (format)
         {
-            case vela::graphics::VertexAttributeFormat::eFLOAT:  return VK_FORMAT_R32_SFLOAT;
-            case vela::graphics::VertexAttributeFormat::eFLOAT2: return VK_FORMAT_R32G32_SFLOAT;
-            case vela::graphics::VertexAttributeFormat::eFLOAT3: return VK_FORMAT_R32G32B32_SFLOAT;
-            case vela::graphics::VertexAttributeFormat::eFLOAT4: return VK_FORMAT_R32G32B32A32_SFLOAT;
+            case vela::graphics::VertexAttributeFormat::Float:  return VK_FORMAT_R32_SFLOAT;
+            case vela::graphics::VertexAttributeFormat::Float2: return VK_FORMAT_R32G32_SFLOAT;
+            case vela::graphics::VertexAttributeFormat::Float3: return VK_FORMAT_R32G32B32_SFLOAT;
+            case vela::graphics::VertexAttributeFormat::Float4: return VK_FORMAT_R32G32B32A32_SFLOAT;
         }
 
         throw std::runtime_error("Unknown vertex attribute format");
@@ -70,7 +62,7 @@ namespace
     {
         switch (mode)
         {
-            case vela::backend::BlendMode::eOPAQUE:
+            case vela::backend::BlendMode::Opaque:
                 attachment.blendEnable = VK_FALSE;
                 return;
         }
@@ -180,12 +172,17 @@ namespace vela::backend
 
     }
 
-    uint64_t PipelineCache::hashOf(const PipelineDescription& description, const Pass& pass)
+    uint64_t hashShaderCode(std::span<const uint32_t> vertexShader, std::span<const uint32_t> fragmentShader)
+    {
+        const uint64_t hash = hashBytes(vertexShader.data(), vertexShader.size_bytes(), k_fnvOffset);
+        return hashBytes(fragmentShader.data(), fragmentShader.size_bytes(), hash);
+    }
+
+    uint64_t PipelineCache::hashOf(const PipelineDescription& description, const PassFormats& formats)
     {
         uint64_t hash = k_fnvOffset;
 
-        hash = hashString(description.vertexShaderPath, hash);
-        hash = hashString(description.fragmentShaderPath, hash);
+        hash = hashValue(description.shaderHash, hash);
 
         hash = hashValue(description.vertexLayout.stride, hash);
 
@@ -204,19 +201,16 @@ namespace vela::backend
         hash = hashValue(description.depthCompare, hash);
         hash = hashValue(description.blend, hash);
 
-        for (VkFormat format : pass.getColorFormats())
+        for (VkFormat format : formats.colorFormats)
             hash = hashValue(format, hash);
 
-        return hashValue(pass.getDepthFormat(), hash);
+        return hashValue(formats.depthFormat, hash);
     }
 
-    VkPipeline PipelineCache::create(const PipelineDescription& description, const Pass& pass)
+    VkPipeline PipelineCache::create(const PipelineDescription& description, const PassFormats& formats)
     {
-        auto vertCode = vela::utilities::resources::readFileShader(description.vertexShaderPath);
-        auto fragCode = vela::utilities::resources::readFileShader(description.fragmentShaderPath);
-        
-        auto vertShader = createShaderModule(m_device, vertCode);
-        auto fragShader = createShaderModule(m_device, fragCode);
+        auto vertShader = createShaderModule(m_device, description.vertexShader);
+        auto fragShader = createShaderModule(m_device, description.fragmentShader);
 
         VkPipelineShaderStageCreateInfo vertStageCI{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
         vertStageCI.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -280,7 +274,7 @@ namespace vela::backend
             VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         applyBlendMode(blendAttachment, description.blend);
 
-        const std::vector<VkFormat>& colorFormats = pass.getColorFormats();
+        const std::vector<VkFormat>& colorFormats = formats.colorFormats;
 
         const std::vector<VkPipelineColorBlendAttachmentState> blendAttachments(
             colorFormats.size(), blendAttachment);
@@ -297,7 +291,7 @@ namespace vela::backend
         VkPipelineRenderingCreateInfo renderingCI{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
         renderingCI.colorAttachmentCount = static_cast<uint32_t>(colorFormats.size());
         renderingCI.pColorAttachmentFormats = colorFormats.data();
-        renderingCI.depthAttachmentFormat = pass.getDepthFormat();
+        renderingCI.depthAttachmentFormat = formats.depthFormat;
 
         VkPipelineDepthStencilStateCreateInfo depthCI{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
         depthCI.depthTestEnable = description.depthTest ? VK_TRUE : VK_FALSE;
@@ -333,14 +327,14 @@ namespace vela::backend
         return pipeline;
     }
 
-    VkPipeline PipelineCache::get(const PipelineDescription& description, const Pass& pass)
+    VkPipeline PipelineCache::get(const PipelineDescription& description, const PassFormats& formats)
     {
-        const uint64_t key = hashOf(description, pass);
+        const uint64_t key = hashOf(description, formats);
 
         if (auto it = m_pipelines.find(key); it != m_pipelines.end())
             return it->second;
 
-        VkPipeline pipeline = create(description, pass);
+        VkPipeline pipeline = create(description, formats);
         m_pipelines.emplace(key, pipeline);
         std::cout << "New pipeline was created with " << key << " key\n";
 
@@ -361,4 +355,4 @@ namespace vela::backend
         vkDestroyPipelineCache(m_device, m_vkCache, nullptr);
     }
 
-} //namespace vela::backend
+} //namespace vela::backendcolorFormats

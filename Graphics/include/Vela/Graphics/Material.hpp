@@ -3,10 +3,12 @@
 
 #include "Vela/Graphics/VertexLayout.hpp"
 
+#include <cstdint>
 #include <memory>
-#include <string>
+#include <span>
+#include <type_traits>
 
-#include "glm/mat4x4.hpp"
+#include "Vela/Result.hpp"
 
 namespace vela::backend
 {
@@ -21,22 +23,22 @@ namespace vela::core
 namespace vela::graphics
 {
     class Texture;
-    class RenderGraph;
 } //namespace vela::graphics
 
 namespace vela::graphics
 {
     struct MaterialDescription
     {
-        std::string vertexShaderPath;
-        std::string fragmentShaderPath;
+        std::span<const uint32_t> vertexShader;
+        std::span<const uint32_t> fragmentShader;
         VertexLayout vertexLayout;
+        uint32_t textureCount{0};
     };
 
     class Material
     {
     public:
-        Material(core::Context& ctx, RenderGraph& renderGraph, const MaterialDescription& description);
+        static Result<Material> create(core::Context& ctx, const MaterialDescription& description);
         ~Material();
 
         Material(Material&&) noexcept;
@@ -45,12 +47,20 @@ namespace vela::graphics
         Material(const Material&) = delete;
         Material& operator=(const Material&) = delete;
 
-        void setAlbedoTexture(const Texture& texture);
+        Status setTexture(uint32_t slot, const Texture& texture);
+
+        template<typename Slot> requires std::is_enum_v<Slot>
+        Status setTexture(Slot slot, const Texture& texture)
+        {
+            return setTexture(static_cast<uint32_t>(slot), texture);
+        }
 
         backend::MaterialImpl* impl() const;
 
         const MaterialDescription& getMaterialDescription() const;
     private:
+        Material(core::Context& ctx, const MaterialDescription& description);
+
         std::unique_ptr<backend::MaterialImpl> m_impl{nullptr};
     };
 } //namespace vela::graphics

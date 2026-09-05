@@ -2,25 +2,41 @@
 #include "ContextImpl.hpp"
 #include "Vela/Core/Context.hpp"
 
-#include "stb_image.h"
-
 #include <cstring>
 #include <stdexcept>
 
+namespace
+{
+    VkFormat toVkFormat(vela::graphics::TextureFormat format)
+    {
+        switch (format)
+        {
+            case vela::graphics::TextureFormat::RGBA8Unorm: return VK_FORMAT_R8G8B8A8_UNORM;
+            default:                                        return VK_FORMAT_R8G8B8A8_SRGB;
+        }
+    }
+} //namespace
+
 namespace vela::backend
 {
-    TextureImpl::TextureImpl(core::Context& context, const std::string& path)
+    TextureImpl::TextureImpl(core::Context& context, const graphics::ImageData& image)
     {
-        int width, height, channels;
-        stbi_uc* pixels = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+        if (image.width == 0 || image.height == 0)
+            throw std::runtime_error("Image extent must not be zero");
 
-        if (!pixels)
-            throw std::runtime_error("Failed to load image: " + path);
+        const size_t expected = static_cast<size_t>(image.width) * image.height * graphics::bytesPerPixel(image.format);
+
+        if (image.pixels.size() < expected)
+            throw std::runtime_error("Image pixel buffer is smaller than width * height * bytes per pixel");
+
+        const uint32_t width = image.width;
+        const uint32_t height = image.height;
+        const VkFormat format = toVkFormat(image.format);
 
         m_device = context.impl()->getDevice();
         m_allocator = context.impl()->getAllocator();
 
-        VkDeviceSize imageSize = width * height * 4;
+        VkDeviceSize imageSize = expected;
 
         VkBufferCreateInfo stagingCI{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
         stagingCI.size = imageSize;
@@ -37,15 +53,14 @@ namespace vela::backend
         VmaAllocationInfo stagingInfo{};
         vmaCreateBuffer(m_allocator, &stagingCI, &stagingAllocCI, &stagingBuf, &stagingAlloc, &stagingInfo);
 
-        std::memcpy(stagingInfo.pMappedData, pixels, imageSize);
-        stbi_image_free(pixels);
+        std::memcpy(stagingInfo.pMappedData, image.pixels.data(), imageSize);
 
         VkImageCreateInfo imageCI{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
         imageCI.imageType = VK_IMAGE_TYPE_2D;
-        imageCI.extent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+        imageCI.extent = {width, height, 1};
         imageCI.mipLevels = 1;
         imageCI.arrayLayers = 1;
-        imageCI.format = VK_FORMAT_R8G8B8A8_SRGB;
+        imageCI.format = format;
         imageCI.tiling = VK_IMAGE_TILING_OPTIMAL; 
         imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         imageCI.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -138,7 +153,7 @@ namespace vela::backend
         VkImageViewCreateInfo viewCI{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
         viewCI.image = m_image;
         viewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewCI.format = VK_FORMAT_R8G8B8A8_SRGB;
+        viewCI.format = format;
         viewCI.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
 
         if(VkResult result = vkCreateImageView(m_device, &viewCI, nullptr, &m_imageView); result != VK_SUCCESS)

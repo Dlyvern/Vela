@@ -2,7 +2,9 @@
 #define VELA_GRAPHICS_TEXTURE_HPP
 
 #include <memory>
-#include <string>
+
+#include "Vela/Graphics/ImageData.hpp"
+#include "Vela/Result.hpp"
 
 namespace vela::core
 {
@@ -19,7 +21,8 @@ namespace vela::graphics
     class Texture
     {
     public:
-        Texture(core::Context& ctx, const std::string& path);
+        static Result<Texture> create(core::Context& ctx, const ImageData& image);
+
         ~Texture();
         
         Texture(Texture&&) noexcept;
@@ -30,6 +33,8 @@ namespace vela::graphics
 
         backend::TextureImpl* impl() const;
     private:
+        Texture(core::Context& ctx, const ImageData& image);
+
         std::unique_ptr<backend::TextureImpl> m_impl{nullptr};
     };
 } //namespace vela::graphics

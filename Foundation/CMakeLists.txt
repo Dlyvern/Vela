@@ -1,0 +1,2 @@
+add_library(VelaFoundation INTERFACE)
+target_include_directories(VelaFoundation INTERFACE include)

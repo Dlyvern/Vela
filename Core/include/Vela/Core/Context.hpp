@@ -5,6 +5,7 @@
 
 #include "Vela/Core/IWindowBackend.hpp"
 #include "Vela/Core/ContextPreferences.hpp"
+#include "Vela/Result.hpp"
 
 namespace vela::graphics
 {
@@ -27,8 +28,9 @@ namespace vela::core
     class Context
     {
     public:
-        Context(IWindowBackend& windowBackend, const ContextPreferences& contextPreferences = {});
-        void createSurfaceFor(Window& window);
+        static Result<Context> create(Window& window, const ContextPreferences& contextPreferences = {});
+
+        [[nodiscard]] Status attach(Window& window);
 
         void waitIdle();
 
@@ -39,6 +41,8 @@ namespace vela::core
         Context& operator=(const Context&) = delete;
         backend::ContextImpl* impl();
     private:
+        Context(IWindowBackend& windowBackend, const ContextPreferences& contextPreferences);
+
         std::unique_ptr<backend::ContextImpl> m_contextImpl{nullptr};
     };
 } //namespace vela::core

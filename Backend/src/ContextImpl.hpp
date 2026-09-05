@@ -7,6 +7,8 @@
 
 #include "vk_mem_alloc.h"
 
+#include "Pipeline.hpp"
+
 #include <optional>
 
 namespace vela::backend
@@ -28,6 +30,9 @@ namespace vela::backend
         VmaAllocator getAllocator() const;
         VkQueue getGraphicsQueue() const;
         VkSwapchainKHR getSwapchain() const;
+
+        LayoutCache& getLayoutCache();
+        VkDescriptorSetLayout getPerViewDescriptorSetLayout() const;
 
         const std::vector<VkImage>& getSwapchainImages() const;
         const std::vector<VkImageView>& getSwapchainImageViews() const;
@@ -96,6 +101,9 @@ namespace vela::backend
         core::IWindowBackend& m_windowBackend;
 
         VmaAllocator m_allocator{VK_NULL_HANDLE};
+
+        std::optional<LayoutCache> m_layoutCache;
+        VkDescriptorSetLayout m_perViewDescriptorSetLayout{VK_NULL_HANDLE};
     };
 
 } // namespace vela::backend

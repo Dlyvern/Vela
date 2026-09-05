@@ -8,9 +8,9 @@ namespace vela::core
 {
     enum class WindowMode : uint8_t
     {
-        eWINDOWED = 0,
-        eBORDERLESS_FULLSCREEN,
-        eEXCLUSIVE_FULLSCREEN
+        Windowed = 0,
+        BorderlessFullscreen,
+        ExclusiveFullscreen
     };
 
     struct MonitorInfo
@@ -28,7 +28,7 @@ namespace vela::core
         std::string title{"Test"};
         int width{800};
         int height{600};
-        WindowMode mode{WindowMode::eWINDOWED};
+        WindowMode mode{WindowMode::Windowed};
         uint32_t monitorIndex{0};
         bool resizable{true};
     };

@@ -1,17 +1,12 @@
 #ifndef VELA_BACKEND_MATERIAL_IMPL_HPP
 #define VELA_BACKEND_MATERIAL_IMPL_HPP
 
-#include <string>
-#include <vector>
-
 #include "volk.h"
 #include "vk_mem_alloc.h"
 
 #include "Vela/Graphics/Material.hpp"
 
 #include "Pipeline.hpp"
-
-#include "glm/mat4x4.hpp"
 
 namespace vela::core
 {
@@ -20,13 +15,10 @@ namespace vela::core
 
 namespace vela::backend
 {
-    class RenderGraphImpl;
-
     class MaterialImpl
     {
     public:
-        MaterialImpl(core::Context& context, RenderGraphImpl& renderGraph,
-            const graphics::MaterialDescription& description);
+        MaterialImpl(core::Context& context, const graphics::MaterialDescription& description);
         ~MaterialImpl();
 
         VkPipelineLayout getPipelineLayout() const;
@@ -34,21 +26,25 @@ namespace vela::backend
         const PipelineDescription& getPipelineDescription() const;
         VkDescriptorSetLayout getDescriptorSetLayout() const;
 
-        void setAlbedoTexture(VkImageView imageView, VkSampler sampler);
+        Status setTexture(uint32_t slot, VkImageView imageView, VkSampler sampler);
 
         const graphics::MaterialDescription& getMaterialDescription() const;
     private:
         VmaAllocator m_allocator{VK_NULL_HANDLE};
+
+        std::vector<uint32_t> m_vertexShader;
+        std::vector<uint32_t> m_fragmentShader;
 
         graphics::MaterialDescription m_materialDescription;
         PipelineDescription m_pipelineDescription;
 
         //TODO Every material should not create additional VkDescriptorPool
         VkDescriptorPool m_descriptorPool{VK_NULL_HANDLE};
-        VkDescriptorSet  m_descriptorSet{VK_NULL_HANDLE};
+        VkDescriptorSet m_descriptorSet{VK_NULL_HANDLE};
         VkDescriptorSetLayout m_descriptorSetLayout{VK_NULL_HANDLE};
         VkPipelineLayout m_pipelineLayout{VK_NULL_HANDLE};
         VkDevice m_device{VK_NULL_HANDLE};
+        uint32_t m_textureCount{0};
     };
 } //namespace vela::backend
 

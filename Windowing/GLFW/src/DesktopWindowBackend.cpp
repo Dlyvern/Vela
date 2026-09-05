@@ -1,4 +1,4 @@
-#include "Vela/Windowing/GLFWWindowBackend.hpp"
+#include "Vela/Windowing/DesktopWindowBackend.hpp"
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
@@ -7,23 +7,7 @@
 
 namespace
 {
-    bool windowPositionSupported()
-    {
-        return glfwGetPlatform() != GLFW_PLATFORM_WAYLAND;
-    }
-} //namespace
-
-namespace vela::windowing
-{
-    GLFWWindowBackend::GLFWWindowBackend()
-    {
-        glfwSetErrorCallback(&GLFWWindowBackend::glfwErrorCallback);
-
-        if (!glfwInit())
-            throw std::runtime_error("Failed to initialize GLFW");
-    }
-
-    GLFWmonitor* GLFWWindowBackend::monitorAt(uint32_t monitorIndex)
+    GLFWmonitor* monitorAt(uint32_t monitorIndex)
     {
         int count{0};
         GLFWmonitor** monitors = glfwGetMonitors(&count);
@@ -37,50 +21,66 @@ namespace vela::windowing
         return monitors[monitorIndex];
     }
 
-    void GLFWWindowBackend::getFramebufferSize(void* nativeWindow, int& width, int& height)
+    bool windowPositionSupported()
+    {
+        return glfwGetPlatform() != GLFW_PLATFORM_WAYLAND;
+    }
+} //namespace
+
+namespace vela::windowing
+{
+    DesktopWindowBackend::DesktopWindowBackend()
+    {
+        glfwSetErrorCallback(&DesktopWindowBackend::glfwErrorCallback);
+
+        if (!glfwInit())
+            throw std::runtime_error("Failed to initialize GLFW");
+    }
+
+    void DesktopWindowBackend::getFramebufferSize(void* nativeWindow, int& width, int& height)
     {
         auto glfwWindow = static_cast<GLFWwindow*>(nativeWindow);
         glfwGetFramebufferSize(glfwWindow, &width, &height);
     }
 
-    void GLFWWindowBackend::getWindowSize(void* nativeWindow, int& width, int& height)
+    void DesktopWindowBackend::getWindowSize(void* nativeWindow, int& width, int& height)
     {
         auto glfwWindow = static_cast<GLFWwindow*>(nativeWindow);
         glfwGetWindowSize(glfwWindow, &width, &height);
     }
 
-    void GLFWWindowBackend::setTitle(void* nativeWindow, const std::string& title)
+    void DesktopWindowBackend::setTitle(void* nativeWindow, const std::string& title)
     {
         auto glfwWindow = static_cast<GLFWwindow*>(nativeWindow);
         glfwSetWindowTitle(glfwWindow, title.c_str());
     }
 
-    void GLFWWindowBackend::glfwErrorCallback(int errorCode, const char* description)
+    void DesktopWindowBackend::glfwErrorCallback(int errorCode, const char* description)
     {
-        std::cerr << "[GLFWWindowBackend] Code: " << errorCode
+        std::cerr << "[DesktopWindowBackend] Code: " << errorCode
               << " Description: "
               << description
               << '\n';
     }
 
-    void GLFWWindowBackend::pollEvents()
+    void DesktopWindowBackend::pollEvents()
     {
         glfwPollEvents();
     }
 
-    void GLFWWindowBackend::waitEvents()
+    void DesktopWindowBackend::waitEvents()
     {
         glfwWaitEvents();
     }
 
-    std::vector<const char*> GLFWWindowBackend::requiredInstanceExtensions() const
+    std::vector<const char*> DesktopWindowBackend::requiredInstanceExtensions() const
     {
         uint32_t count = 0;
         const char** exts = glfwGetRequiredInstanceExtensions(&count);
         return std::vector<const char*>(exts, exts + count);
     }
 
-    void* GLFWWindowBackend::createSurface(void* instance, void* nativeWindowHandle)
+    void* DesktopWindowBackend::createSurface(void* instance, void* nativeWindowHandle)
     {
         auto vkInstance = static_cast<VkInstance>(instance);
         auto glfwWindow = static_cast<GLFWwindow*>(nativeWindowHandle);
@@ -92,13 +92,13 @@ namespace vela::windowing
         return surface;
     }
 
-    void GLFWWindowBackend::close(void* nativeWindow)
+    void DesktopWindowBackend::close(void* nativeWindow)
     {
         auto glfwWindow = static_cast<GLFWwindow*>(nativeWindow);
         glfwSetWindowShouldClose(glfwWindow, GLFW_TRUE);
     }
 
-    std::vector<core::MonitorInfo> GLFWWindowBackend::monitors() const
+    std::vector<core::MonitorInfo> DesktopWindowBackend::monitors() const
     {
         int count{0};
         GLFWmonitor** monitors = glfwGetMonitors(&count);
@@ -132,7 +132,7 @@ namespace vela::windowing
         return result;
     }
 
-    void* GLFWWindowBackend::createNativeWindow(const core::WindowPreferences& windowPreferences)
+    void* DesktopWindowBackend::createNativeWindow(const core::WindowPreferences& windowPreferences)
     {
         glfwDefaultWindowHints();
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -140,7 +140,7 @@ namespace vela::windowing
 
         GLFWmonitor* monitor = monitorAt(windowPreferences.monitorIndex);
 
-        const bool fullscreen = windowPreferences.mode != core::WindowMode::eWINDOWED && monitor != nullptr;
+        const bool fullscreen = windowPreferences.mode != core::WindowMode::Windowed && monitor != nullptr;
 
         GLFWwindow* window = nullptr;
 
@@ -149,7 +149,7 @@ namespace vela::windowing
             window = glfwCreateWindow(windowPreferences.width, windowPreferences.height,
                 windowPreferences.title.c_str(), nullptr, nullptr);
         }
-        else if (windowPreferences.mode == core::WindowMode::eBORDERLESS_FULLSCREEN)
+        else if (windowPreferences.mode == core::WindowMode::BorderlessFullscreen)
         {
             const GLFWvidmode* videoMode = glfwGetVideoMode(monitor);
 
@@ -198,7 +198,7 @@ namespace vela::windowing
         return window;
     }
 
-    void GLFWWindowBackend::setMode(void* nativeWindow, core::WindowMode mode, uint32_t monitorIndex)
+    void DesktopWindowBackend::setMode(void* nativeWindow, core::WindowMode mode, uint32_t monitorIndex)
     {
         auto glfwWindow = static_cast<GLFWwindow*>(nativeWindow);
 
@@ -215,7 +215,7 @@ namespace vela::windowing
         GLFWmonitor* monitor = monitorAt(monitorIndex);
         const WindowedRect rect = m_windowedRects[nativeWindow];
 
-        if (mode == core::WindowMode::eWINDOWED || monitor == nullptr)
+        if (mode == core::WindowMode::Windowed || monitor == nullptr)
         {
             glfwSetWindowMonitor(glfwWindow, nullptr, rect.x, rect.y, rect.width, rect.height, GLFW_DONT_CARE);
             return;
@@ -223,7 +223,7 @@ namespace vela::windowing
 
         const GLFWvidmode* videoMode = glfwGetVideoMode(monitor);
 
-        if (mode == core::WindowMode::eBORDERLESS_FULLSCREEN)
+        if (mode == core::WindowMode::BorderlessFullscreen)
         {
             glfwSetWindowMonitor(glfwWindow, monitor, 0, 0,
                 videoMode->width, videoMode->height, videoMode->refreshRate);
@@ -234,7 +234,7 @@ namespace vela::windowing
         }
     }
 
-    void GLFWWindowBackend::destroyNativeWindow(void* window)
+    void DesktopWindowBackend::destroyNativeWindow(void* window)
     {
         auto glfwWindow = static_cast<GLFWwindow*>(window);
 
@@ -243,15 +243,24 @@ namespace vela::windowing
         glfwDestroyWindow(glfwWindow);
     }
 
-    bool GLFWWindowBackend::isOpen(void* window) const
+    bool DesktopWindowBackend::isOpen(void* window) const
     {
         auto glfwWindow = static_cast<GLFWwindow*>(window);
 
         return !glfwWindowShouldClose(glfwWindow);
     }
 
-    GLFWWindowBackend::~GLFWWindowBackend()
+    DesktopWindowBackend::~DesktopWindowBackend()
     {
         glfwTerminate();
     }
 } //namespace vela::windowing
+
+namespace vela::core
+{
+    IWindowBackend& platformWindowBackend()
+    {
+        static windowing::DesktopWindowBackend backend;
+        return backend;
+    }
+} //namespace vela::core

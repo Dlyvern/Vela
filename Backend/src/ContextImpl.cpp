@@ -30,6 +30,8 @@ namespace vela::backend
 
         vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
 
+        m_layoutCache.reset();
+
         vkDestroyDevice(m_device, nullptr);
         vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
 
@@ -121,22 +123,22 @@ namespace vela::backend
             std::vector<VkPresentModeKHR> presentModes(presentModeCount);
             vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data());
 
-            auto toVkPresentMode = [](core::PresentMode mode)
+            auto toVkPresentMode = [](core::VSync vsync)
             {
-                switch (mode)
+                switch (vsync)
                 {
-                    case core::PresentMode::eIMMEDIATE:    return VK_PRESENT_MODE_IMMEDIATE_KHR;
-                    case core::PresentMode::eMAILBOX:      return VK_PRESENT_MODE_MAILBOX_KHR;
-                    case core::PresentMode::eFIFO_RELAXED: return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
-                    default:                               return VK_PRESENT_MODE_FIFO_KHR;
+                    case core::VSync::Off:      return VK_PRESENT_MODE_IMMEDIATE_KHR;
+                    case core::VSync::Fast:     return VK_PRESENT_MODE_MAILBOX_KHR;
+                    case core::VSync::Adaptive: return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+                    default:                    return VK_PRESENT_MODE_FIFO_KHR;
                 }
             };
 
-            const VkPresentModeKHR prefered = toVkPresentMode(m_contextPreferences.preferedPresentMode);
+            const VkPresentModeKHR preferred = toVkPresentMode(m_contextPreferences.preferredVSync);
 
             for(const VkPresentModeKHR presentMode : presentModes)
-                if(presentMode == prefered)
-                    return prefered;
+                if(presentMode == preferred)
+                    return preferred;
 
             return VK_PRESENT_MODE_FIFO_KHR;
         };
@@ -148,6 +150,8 @@ namespace vela::backend
             return surfaceCapabilities;
         };
 
+        
+
         VkSurfaceFormatKHR format = getSwapchainFormat();
         VkPresentModeKHR presentMode = getSwapchainPresentMode();
         VkSurfaceCapabilitiesKHR surfaceCapabilities = getSwapchainExtent();
@@ -158,6 +162,11 @@ namespace vela::backend
 
         VkExtent2D extent = framebufferExtent(surfaceCapabilities);
 
+        VkImageUsageFlags wantedImageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
+        if ((surfaceCapabilities.supportedUsageFlags & wantedImageUsage) != wantedImageUsage)
+            throw std::runtime_error("Surface does not support required swapchain image usage");
+
         VkSwapchainCreateInfoKHR swapchainCI{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
         swapchainCI.surface = m_surface;
         swapchainCI.minImageCount = imageCount;
@@ -165,7 +174,7 @@ namespace vela::backend
         swapchainCI.imageColorSpace = format.colorSpace; 
         swapchainCI.imageExtent = extent;
         swapchainCI.imageArrayLayers = 1;
-        swapchainCI.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        swapchainCI.imageUsage = wantedImageUsage;
         swapchainCI.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         swapchainCI.preTransform = surfaceCapabilities.currentTransform;
         swapchainCI.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -225,14 +234,19 @@ namespace vela::backend
         if(physicalDevices.empty())
             throw std::runtime_error("Failed to find GPUs with Vulkan support");
 
-        auto gpuTypeToVk = [](const core::GPUDeviceType& deviceType)
+        auto gpuTypeToVk = [](core::GpuPreference preference)
         {
-            if(deviceType == core::GPUDeviceType::eDISCRETE)
+            if(preference == core::GpuPreference::Discrete)
                 return VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
-            if(deviceType == core::GPUDeviceType::eINTEGRATED)
+            if(preference == core::GpuPreference::Integrated)
                 return VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
 
             return VK_PHYSICAL_DEVICE_TYPE_OTHER;
+        };
+
+        auto gpuPreferenceName = [](core::GpuPreference preference)
+        {
+            return preference == core::GpuPreference::Discrete ? "discrete" : "integrated";
         };
 
         auto checkQueueFamilyProperties = [this](VkPhysicalDevice device)
@@ -328,36 +342,63 @@ namespace vela::backend
             return true;
         };
 
-        for(const auto& physicalDevice : physicalDevices)
+        auto logSelectedDevice = [this](const VkPhysicalDeviceProperties& properties)
         {
-            VkPhysicalDeviceProperties physicalDeviceProperties{};
-            vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
-
-            if(gpuTypeToVk(m_contextPreferences.preferedGpuType) != physicalDeviceProperties.deviceType)
-                continue;
-
-            if(!checkQueueFamilyProperties(physicalDevice))
-                continue;
-
-            m_physicalDevice = physicalDevice;
-
             std::cout << "Selected GPU: \n ------------------------------------------\n";
 
-            std::cout << "Name: " << physicalDeviceProperties.deviceName << '\n';
-            std::cout << "API version: " << physicalDeviceProperties.apiVersion << '\n';
-            std::cout << "Driver version: " << physicalDeviceProperties.driverVersion << '\n';
+            std::cout << "Name: " << properties.deviceName << '\n';
+            std::cout << "API version: " << properties.apiVersion << '\n';
+            std::cout << "Driver version: " << properties.driverVersion << '\n';
             std::cout << "Present queue family " << m_queueFamilyIndices.present.value() << '\n';
             std::cout << "Graphics queue family " << m_queueFamilyIndices.graphics.value() << '\n';
             std::cout << "Transfer queue family " << m_queueFamilyIndices.transfer.value() << '\n';
             std::cout << "Compute queue family " << m_queueFamilyIndices.compute.value() << '\n';
 
             std::cout << "------------------------------------------\n";
+        };
 
-            break;
+        const VkPhysicalDeviceType preferredType = gpuTypeToVk(m_contextPreferences.preferredGpu);
+
+        VkPhysicalDevice fallbackDevice{VK_NULL_HANDLE};
+        VkPhysicalDeviceProperties fallbackProperties{};
+        QueueFamilyIndices fallbackIndices;
+
+        for(const auto& physicalDevice : physicalDevices)
+        {
+            VkPhysicalDeviceProperties physicalDeviceProperties{};
+            vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
+
+            if(!checkQueueFamilyProperties(physicalDevice))
+                continue;
+
+            if(physicalDeviceProperties.deviceType == preferredType)
+            {
+                m_physicalDevice = physicalDevice;
+                logSelectedDevice(physicalDeviceProperties);
+                break;
+            }
+
+            if(fallbackDevice == VK_NULL_HANDLE)
+            {
+                fallbackDevice = physicalDevice;
+                fallbackProperties = physicalDeviceProperties;
+                fallbackIndices = m_queueFamilyIndices;
+            }
         }
 
         if (!m_physicalDevice)
-            throw std::runtime_error("No suitable physical device found");
+        {
+            if (fallbackDevice == VK_NULL_HANDLE)
+                throw std::runtime_error("No suitable physical device found");
+
+            m_physicalDevice = fallbackDevice;
+            m_queueFamilyIndices = fallbackIndices;
+
+            std::cerr << "No " << gpuPreferenceName(m_contextPreferences.preferredGpu)
+                      << " GPU available, falling back to \"" << fallbackProperties.deviceName << "\"\n";
+
+            logSelectedDevice(fallbackProperties);
+        }
     }
 
     void ContextImpl::createDevice()
@@ -407,6 +448,26 @@ namespace vela::backend
         vkGetDeviceQueue(m_device, m_queueFamilyIndices.graphics.value(), 0, &m_graphicsQueue);
         vkGetDeviceQueue(m_device, m_queueFamilyIndices.compute.value(), 0, &m_computeQueue);
         vkGetDeviceQueue(m_device, m_queueFamilyIndices.transfer.value(), 0, &m_transferQueue);
+
+        m_layoutCache.emplace(m_device);
+
+        VkDescriptorSetLayoutBinding perViewBinding{};
+        perViewBinding.binding = 0;
+        perViewBinding.descriptorCount = 1;
+        perViewBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        perViewBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+        m_perViewDescriptorSetLayout = m_layoutCache->getDescriptorSetLayout({perViewBinding});
+    }
+
+    LayoutCache& ContextImpl::getLayoutCache()
+    {
+        return *m_layoutCache;
+    }
+
+    VkDescriptorSetLayout ContextImpl::getPerViewDescriptorSetLayout() const
+    {
+        return m_perViewDescriptorSetLayout;
     }
 
     VkExtent2D ContextImpl::getSwapchainExtent() const

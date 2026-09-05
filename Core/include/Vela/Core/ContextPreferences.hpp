@@ -6,18 +6,18 @@
 
 namespace vela::core
 {
-    enum class GPUDeviceType
+    enum class GpuPreference : uint8_t
     {
-        eDISCRETE = 0,
-        eINTEGRATED = 1
+        Discrete = 0,
+        Integrated
     };
 
-    enum class PresentMode : uint8_t
+    enum class VSync : uint8_t
     {
-        eIMMEDIATE = 0,
-        eMAILBOX,
-        eFIFO,
-        eFIFO_RELAXED
+        Off = 0,
+        On,
+        Adaptive,
+        Fast
     };
 
     struct Version
@@ -40,8 +40,8 @@ namespace vela::core
         std::string engineName{"TestEngine"};
         Version applicationVersion{};
         Version engineVersion{};
-        GPUDeviceType preferedGpuType{GPUDeviceType::eDISCRETE};
-        PresentMode preferedPresentMode{PresentMode::eMAILBOX};
+        GpuPreference preferredGpu{GpuPreference::Discrete};
+        VSync preferredVSync{VSync::Fast};
     };
 } //namespace vela::core
 

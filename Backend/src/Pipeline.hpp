@@ -4,6 +4,7 @@
 #include "volk.h"
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -38,13 +39,16 @@ namespace vela::backend
 
     enum class BlendMode : uint8_t
     {
-        eOPAQUE = 0,
+        Opaque = 0,
     };
+
+    uint64_t hashShaderCode(std::span<const uint32_t> vertexShader, std::span<const uint32_t> fragmentShader);
 
     struct PipelineDescription
     {
-        std::string vertexShaderPath;
-        std::string fragmentShaderPath;
+        std::span<const uint32_t> vertexShader;
+        std::span<const uint32_t> fragmentShader;
+        uint64_t shaderHash{0};
         graphics::VertexLayout vertexLayout;
         VkPipelineLayout layout;
 
@@ -53,20 +57,20 @@ namespace vela::backend
         bool depthTest{true};
         bool depthWrite{true};
         VkCompareOp depthCompare{VK_COMPARE_OP_LESS};
-        BlendMode blend{BlendMode::eOPAQUE};
+        BlendMode blend{BlendMode::Opaque};
     };
 
     class PipelineCache
     {
     public:
         PipelineCache(VkDevice device);
-        VkPipeline get(const PipelineDescription& description, const Pass& pass);
+        VkPipeline get(const PipelineDescription& description, const PassFormats& formats);
         void clear();
         ~PipelineCache();
     private:
-        VkPipeline create(const PipelineDescription& description, const Pass& pass);
+        VkPipeline create(const PipelineDescription& description, const PassFormats& formats);
 
-        uint64_t hashOf(const PipelineDescription& description, const Pass& pass);
+        uint64_t hashOf(const PipelineDescription& description, const PassFormats& formats);
 
         std::unordered_map<uint64_t, VkPipeline> m_pipelines;
         VkPipelineCache m_vkCache{VK_NULL_HANDLE};

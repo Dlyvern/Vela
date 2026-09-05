@@ -1,5 +1,5 @@
 add_executable(SimpleCube SimpleCube.cpp)
-target_link_libraries(SimpleCube PRIVATE Vela::Vela Vela::GLFW)
+target_link_libraries(SimpleCube PRIVATE Vela::Vela Vela::Assets)
 
 vela_compile_shaders(
     TARGET SimpleCube

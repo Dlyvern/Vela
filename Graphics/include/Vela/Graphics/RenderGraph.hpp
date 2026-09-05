@@ -2,7 +2,9 @@
 #define VELA_GRAPHICS_RENDER_GRAPH_HPP
 
 #include <memory>
-#include "glm/mat4x4.hpp"
+
+#include "Vela/Result.hpp"
+#include "Vela/Math/Matrix.hpp"
 
 namespace vela::core
 {
@@ -25,7 +27,7 @@ namespace vela::graphics
     class RenderGraph
     {
     public:
-        RenderGraph(core::Context& context);
+        static Result<RenderGraph> create(core::Context& context);
 
         RenderGraph(RenderGraph&&) noexcept;
         RenderGraph& operator=(RenderGraph&&) noexcept;
@@ -34,13 +36,19 @@ namespace vela::graphics
         RenderGraph& operator=(const RenderGraph&) = delete;
 
         void beginFrame();
-        void beginPresentPass(float r = 0.1f, float g = 0.2f, float b = 0.4f, float a = 1.0f);
-        void draw(const graphics::Mesh& mesh, const graphics::Material& material, const glm::mat4& model);
-        void updatePerViewDescriptors(const glm::mat4& view, const glm::mat4& projection);
-        void endRenderPass();
+
+        void beginPass(const std::string& renderGraphPassName);
+        void draw(const graphics::Mesh& mesh, const graphics::Material& material, const math::Mat4& model);
+        void updatePerViewDescriptors(const math::Mat4& view, const math::Mat4& projection);
+        void endPass();
         void endFrame();
 
         backend::RenderGraphImpl* impl() const;
+
+    private:
+        RenderGraph(core::Context& context);
+
+    public:
 
         ~RenderGraph();
 

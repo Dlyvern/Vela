@@ -1,5 +1,5 @@
-#ifndef VELA_UTILITIES_RESOURCES_HPP
-#define VELA_UTILITIES_RESOURCES_HPP
+#ifndef VELA_ASSETS_RESOURCES_HPP
+#define VELA_ASSETS_RESOURCES_HPP
 
 #if defined(_WIN32)
     #define WIN32_LEAN_AND_MEAN
@@ -10,13 +10,11 @@
 #endif
 
 #include <filesystem>
-#include <vector>
 #include <string>
-#include <fstream>
 #include <stdexcept>
 #include <cstdint>
 
-namespace vela::utilities::resources
+namespace vela::assets::resources
 {
     // Absolute path of the directory containing the running executable.
     inline std::filesystem::path executableDirectory()
@@ -42,20 +40,6 @@ namespace vela::utilities::resources
     {
         return executableDirectory() / relativePath;
     }
-    
-    inline std::vector<char> readFileShader(const std::string& path)
-    {
-        std::ifstream file(path, std::ios::ate | std::ios::binary);
-
-        if (!file.is_open())
-            throw std::runtime_error("Failed to open " + path);
-
-        size_t size = (size_t)file.tellg();
-        std::vector<char> buffer(size);
-        file.seekg(0);
-        file.read(buffer.data(), size);
-        return buffer;
-    }
 }
 
-#endif //VELA_UTILITIES_RESOURCES_HPP
+#endif //VELA_ASSETS_RESOURCES_HPP

@@ -3,6 +3,8 @@
 
 #include "Vertex.hpp"
 
+#include "Vela/Result.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -24,11 +26,14 @@ namespace vela::graphics
     class Mesh
     {
     public:
-        Mesh(core::Context& ctx, std::span<const std::byte> vertexData, uint32_t vertexCount);
+        static Result<Mesh> create(core::Context& ctx, std::span<const std::byte> vertexData, uint32_t vertexCount);
 
         template<typename V>
-        Mesh(core::Context& ctx, const std::vector<V>& verts) : Mesh(ctx,
-                   std::as_bytes(std::span<const V>(verts.data(), verts.size())), static_cast<uint32_t>(verts.size())) {}
+        static Result<Mesh> create(core::Context& ctx, const std::vector<V>& verts)
+        {
+            return create(ctx, std::as_bytes(std::span<const V>(verts.data(), verts.size())),
+                static_cast<uint32_t>(verts.size()));
+        }
 
         ~Mesh();
 
@@ -40,6 +45,8 @@ namespace vela::graphics
 
         backend::MeshImpl* impl() const;
     private:
+        Mesh(core::Context& ctx, std::span<const std::byte> vertexData, uint32_t vertexCount);
+
         std::unique_ptr<backend::MeshImpl> m_impl{nullptr};
     };
 } //namespace vela::graphics

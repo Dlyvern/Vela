@@ -26,6 +26,8 @@ namespace vela::core
         virtual std::vector<MonitorInfo> monitors() const = 0;
         virtual ~IWindowBackend() = default;
     };
+
+    IWindowBackend& platformWindowBackend();
 } //namespace vela::core
 
 #endif //VELA_CORE_WINDOW_BACKEND_IWINDOW_BACKEND_HPP

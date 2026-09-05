@@ -8,16 +8,16 @@ namespace vela::graphics
 {
     enum class VertexAttributeFormat : uint8_t
     {
-        eFLOAT = 0,
-        eFLOAT2,
-        eFLOAT3,
-        eFLOAT4
+        Float = 0,
+        Float2,
+        Float3,
+        Float4
     };
 
     struct VertexAttribute
     {
         uint32_t location{0};
-        VertexAttributeFormat format{VertexAttributeFormat::eFLOAT};
+        VertexAttributeFormat format{VertexAttributeFormat::Float};
         uint32_t offset{0};
     };
 

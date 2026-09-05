@@ -1,10 +1,24 @@
 #include "Vela/Graphics/RenderGraph.hpp"
+
+#include <stdexcept>
 #include "RenderGraphImpl.hpp"
 #include "ContextImpl.hpp"
 #include "Vela/Core/Context.hpp"
 
 namespace vela::graphics
 {
+    Result<RenderGraph> RenderGraph::create(core::Context& context)
+    {
+        try
+        {
+            return RenderGraph(context);
+        }
+        catch (const std::exception& error)
+        {
+            return Error{ErrorCode::DeviceCreationFailed, error.what()};
+        }
+    }
+
     RenderGraph::RenderGraph(core::Context& context) : m_impl(std::make_unique<backend::RenderGraphImpl>(context))
     {
 
@@ -19,19 +33,19 @@ namespace vela::graphics
         m_impl->beginFrame();
     }
 
-    void RenderGraph::updatePerViewDescriptors(const glm::mat4& view, const glm::mat4& projection)
+    void RenderGraph::updatePerViewDescriptors(const math::Mat4& view, const math::Mat4& projection)
     {
         m_impl->updatePerViewDescriptors(view, projection);
     }
 
-    void RenderGraph::beginPresentPass(float r, float g, float b, float a)
+    void RenderGraph::beginPass(const std::string& renderGraphPassName)
     {
-        m_impl->beginPresentPass(r, g, b, a);
+        m_impl->beginPass(renderGraphPassName);
     }
 
-    void RenderGraph::endRenderPass()
+    void RenderGraph::endPass()
     {
-        m_impl->endRenderPass();
+        m_impl->endPass();
     }
 
     void RenderGraph::endFrame()
@@ -39,7 +53,7 @@ namespace vela::graphics
         m_impl->endFrame();
     }
 
-    void RenderGraph::draw(const graphics::Mesh& mesh, const graphics::Material& material, const glm::mat4& model)
+    void RenderGraph::draw(const graphics::Mesh& mesh, const graphics::Material& material, const math::Mat4& model)
     {
         m_impl->draw(mesh, material, model);
     }

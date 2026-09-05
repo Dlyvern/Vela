@@ -7,10 +7,12 @@
             "cppStandard": "c++20",
             "intelliSenseMode": "linux-gcc-x64",
             "includePath": [
+                "${workspaceFolder}/Assets/include",
                 "${workspaceFolder}/Core/include",
                 "${workspaceFolder}/Backend/src",
                 "${workspaceFolder}/Graphics/include",
                 "${workspaceFolder}/Scene/include",
+                "${workspaceFolder}/Math/include",
                 "${workspaceFolder}/Windowing/GLFW/include/",
                 "${workspaceFolder}/vendor/glfw/include",
                 "${workspaceFolder}/vendor/stb/stb/",

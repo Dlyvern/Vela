@@ -1,5 +1,7 @@
 #include "Vela/Core/Window.hpp"
 
+#include <stdexcept>
+
 #include <utility>
 
 namespace vela::core
@@ -8,6 +10,23 @@ namespace vela::core
         : m_windowBackend(&windowBackend), m_mode(windowPreferences.mode)
     {
         m_nativeWindow = m_windowBackend->createNativeWindow(windowPreferences);
+    }
+
+    Result<Window> Window::create(const WindowPreferences& windowPreferences)
+    {
+        return create(platformWindowBackend(), windowPreferences);
+    }
+
+    Result<Window> Window::create(IWindowBackend& windowBackend, const WindowPreferences& windowPreferences)
+    {
+        try
+        {
+            return Window(windowBackend, windowPreferences);
+        }
+        catch (const std::exception& error)
+        {
+            return Error{ErrorCode::WindowCreationFailed, error.what()};
+        }
     }
 
     Window::Window(Window&& other) noexcept

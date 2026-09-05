@@ -1,14 +1,26 @@
 #include "Vela/Graphics/Material.hpp"
+
+#include <stdexcept>
 #include "MaterialImpl.hpp"
 #include "TextureImpl.hpp"
 #include "Vela/Graphics/Texture.hpp"
-#include "Vela/Graphics/RenderGraph.hpp"
-#include "RenderGraphImpl.hpp"
 
 namespace vela::graphics
 {
-    Material::Material(core::Context& ctx, RenderGraph& renderGraph, const MaterialDescription& description) :
-    m_impl(std::make_unique<backend::MaterialImpl>(ctx, *renderGraph.impl(), description))
+    Result<Material> Material::create(core::Context& ctx, const MaterialDescription& description)
+    {
+        try
+        {
+            return Material(ctx, description);
+        }
+        catch (const std::exception& error)
+        {
+            return Error{ErrorCode::PipelineCreationFailed, error.what()};
+        }
+    }
+
+    Material::Material(core::Context& ctx, const MaterialDescription& description) :
+    m_impl(std::make_unique<backend::MaterialImpl>(ctx, description))
     {
 
     }
@@ -18,9 +30,9 @@ namespace vela::graphics
         return m_impl->getMaterialDescription();
     }
 
-    void Material::setAlbedoTexture(const Texture& texture)
+    Status Material::setTexture(uint32_t slot, const Texture& texture)
     {
-        m_impl->setAlbedoTexture(texture.impl()->getImageView(), texture.impl()->getSampler());
+        return m_impl->setTexture(slot, texture.impl()->getImageView(), texture.impl()->getSampler());
     }
 
     backend::MaterialImpl* Material::impl() const

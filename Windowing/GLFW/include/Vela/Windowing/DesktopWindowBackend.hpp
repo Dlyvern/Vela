@@ -1,18 +1,16 @@
-#ifndef VELA_WINDOWING_GLFW_WINDOW_BACKEND_HPP
-#define VELA_WINDOWING_GLFW_WINDOW_BACKEND_HPP
+#ifndef VELA_WINDOWING_DESKTOP_WINDOW_BACKEND_HPP
+#define VELA_WINDOWING_DESKTOP_WINDOW_BACKEND_HPP
 
 #include "Vela/Core/IWindowBackend.hpp"
 
 #include <unordered_map>
 
-struct GLFWmonitor;
-
 namespace vela::windowing
 {
-    class GLFWWindowBackend : public core::IWindowBackend
+    class DesktopWindowBackend : public core::IWindowBackend
     {
     public:
-        GLFWWindowBackend();
+        DesktopWindowBackend();
         void getFramebufferSize(void* nativeWindow, int& width, int& height) override;
         void getWindowSize(void* nativeWindow, int& width, int& height) override;
         void setTitle(void* nativeWindow, const std::string& title) override;
@@ -27,7 +25,7 @@ namespace vela::windowing
         void setMode(void* nativeWindow, core::WindowMode mode, uint32_t monitorIndex) override;
         std::vector<core::MonitorInfo> monitors() const override;
 
-        ~GLFWWindowBackend();
+        ~DesktopWindowBackend();
     private:
         struct WindowedRect
         {
@@ -37,11 +35,10 @@ namespace vela::windowing
             int height{0};
         };
 
-        static GLFWmonitor* monitorAt(uint32_t monitorIndex);
         static void glfwErrorCallback(int errorCode, const char* description);
 
         std::unordered_map<void*, WindowedRect> m_windowedRects;
     };
 } //namespace vela::core
 
-#endif //VELA_WINDOWING_GLFW_WINDOW_BACKEND_HPP
+#endif //VELA_WINDOWING_DESKTOP_WINDOW_BACKEND_HPP

@@ -3,6 +3,7 @@
 
 #include "Vela/Core/IWindowBackend.hpp"
 #include "Vela/Core/WindowTypes.hpp"
+#include "Vela/Result.hpp"
 
 #include <cstdint>
 #include <vector>
@@ -12,7 +13,9 @@ namespace vela::core
     class Window
     {
     public:
-        Window(IWindowBackend& windowBackend, const WindowPreferences& windowPreferences);
+        static Result<Window> create(const WindowPreferences& windowPreferences);
+        static Result<Window> create(IWindowBackend& windowBackend, const WindowPreferences& windowPreferences);
+
         Window(const Window&) = delete;
         Window& operator=(const Window&) = delete;
         Window(Window&&) noexcept;
@@ -38,11 +41,13 @@ namespace vela::core
         ~Window();
 
     private:
+        Window(IWindowBackend& windowBackend, const WindowPreferences& windowPreferences);
+
         void destroy();
 
         IWindowBackend* m_windowBackend{nullptr};
         void* m_nativeWindow{nullptr};
-        WindowMode m_mode{WindowMode::eWINDOWED};
+        WindowMode m_mode{WindowMode::Windowed};
     };
 } //namespace vela::core
 

@@ -14,8 +14,8 @@ target_include_directories(VelaCore PUBLIC
 )
 
 target_link_libraries(VelaCore
-    PUBLIC 
-    VelaUtility
+    PUBLIC
+    VelaFoundation
     PRIVATE
     VelaBackend
 )

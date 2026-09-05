@@ -18,8 +18,8 @@ namespace vela::graphics
             {
                 sizeof(SpriteVertex),
                 {
-                    {0, VertexAttributeFormat::eFLOAT2, offsetof(SpriteVertex, position)},
-                    {1, VertexAttributeFormat::eFLOAT2, offsetof(SpriteVertex, uv)}
+                    {0, VertexAttributeFormat::Float2, offsetof(SpriteVertex, position)},
+                    {1, VertexAttributeFormat::Float2, offsetof(SpriteVertex, uv)}
                 }
             };
         }
@@ -36,8 +36,8 @@ namespace vela::graphics
             {
                 sizeof(StaticVertex),
                 {
-                    {0, VertexAttributeFormat::eFLOAT3, offsetof(StaticVertex, position)},
-                    {1, VertexAttributeFormat::eFLOAT2, offsetof(StaticVertex, uv)}
+                    {0, VertexAttributeFormat::Float3, offsetof(StaticVertex, position)},
+                    {1, VertexAttributeFormat::Float2, offsetof(StaticVertex, uv)}
                 }
             };
         }
@@ -54,8 +54,8 @@ namespace vela::graphics
             {
                 sizeof(SkinnedVertex),
                 {
-                    {0, VertexAttributeFormat::eFLOAT3, offsetof(SkinnedVertex, position)},
-                    {1, VertexAttributeFormat::eFLOAT2, offsetof(SkinnedVertex, uv)}
+                    {0, VertexAttributeFormat::Float3, offsetof(SkinnedVertex, position)},
+                    {1, VertexAttributeFormat::Float2, offsetof(SkinnedVertex, uv)}
                 }
             };
         }

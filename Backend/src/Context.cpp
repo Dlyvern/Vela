@@ -36,6 +36,11 @@ namespace vela::core
         }
     }
 
+    MemoryStats Context::getMemoryStats() const
+    {   
+        return m_contextImpl->getMemoryStats();
+    }
+
     Status Context::attach(Window& window)
     {
         try

@@ -2,21 +2,22 @@
 #define VELA_BACKEND_RENDER_GRAPH_IMPL_HPP
 
 #include "volk.h"
+#include "vk_mem_alloc.h"
 
 #include "Pipeline.hpp"
 #include "Pass.hpp"
-#include "PresentPass.hpp"
 
-#include "vk_mem_alloc.h"
+#include "Vela/Result.hpp"
+#include "Vela/Math/Matrix.hpp"
+#include "Vela/Graphics/Pass.hpp"
+#include "Vela/Graphics/FrameStats.hpp"
 
 #include <memory>
-
 #include <cstdint>
 #include <vector>
 #include <unordered_map>
 #include <array>
 
-#include "Vela/Math/Matrix.hpp"
 
 namespace vela::core
 {
@@ -29,12 +30,6 @@ namespace vela::graphics
     class Mesh;
 } //namespace vela::graphics
 
-//TODO Create gbuffer render graph pass and depth render graph pass.
-//TODO Make those render graph passes not primary(Make cmake flag to build them maybe some developers don't want my broken shaders and shitty code)
-//TODO make RenderGraph works as an auto mode where you just implement RGPs, and based on their dependencies it calculates 
-// what RGP should run after or before, like You set output of ShadowRGP is depth and then LightRGP inputs depth and in that way RGP understand the 
-//execution order. Or you can just manually type RGP::beginPass("Shadow"), draw something, RGP::endPass(), and then RGP::beginPass("Light") 
-
 namespace vela::backend
 {
     class RenderGraphImpl
@@ -42,19 +37,27 @@ namespace vela::backend
     public:
         RenderGraphImpl(core::Context& context);
 
-        void beginFrame();
+        Status beginFrame();
         void endFrame();
 
-        void beginPass(const std::string& renderGraphPassName);
+        Status execute();
 
         void draw(const graphics::Mesh& mesh, const graphics::Material& material, const math::Mat4& model);
 
-        void endPass();
+        void setPresentSource(std::string attachmentName);
 
-        void updatePerViewDescriptors(const math::Mat4& view, const math::Mat4& projection);
+        Status addPass(const std::string& name, std::unique_ptr<graphics::Pass> pass);
+
+        void setView(const math::Mat4& view, const math::Mat4& projection);
+        
+        graphics::FrameStats getFrameStats() const;
 
         ~RenderGraphImpl();
     private:
+        bool m_isRenderGraphDirty{true};
+
+        std::string m_presentAttachmentName;
+
         struct RegisteredPass
         {
             std::unique_ptr<Pass> pass;
@@ -62,12 +65,23 @@ namespace vela::backend
             PassFormats formats;
         };
 
+
+        void runPass(RegisteredPass& registered);
+
         // Execution order is the vector order; the map is lookup by name only.
         std::vector<RegisteredPass> m_renderGraphPasses;
         std::unordered_map<std::string, size_t> m_renderGraphPassIndices;
         std::unordered_map<std::string, VkImageLayout> m_attachmentLayouts;
+        std::vector<size_t> m_executionOrder;
+        std::unordered_map<std::string, std::vector<size_t>> m_attachmentProducers;
 
         RegisteredPass* m_currentRenderGraphPass{nullptr};
+
+        const MaterialImpl* m_boundMaterial{nullptr};
+        VkPipeline m_boundPipeline{VK_NULL_HANDLE};
+        VkPipelineLayout m_boundPipelineLayout{VK_NULL_HANDLE};
+        VkBuffer m_boundVertexBuffer{VK_NULL_HANDLE};
+        VkBuffer m_boundIndexBuffer{VK_NULL_HANDLE};
         bool m_currentPassOpenedRendering{false};
 
         // How many frames the CPU may run ahead of the GPU. One would mean the
@@ -76,6 +90,9 @@ namespace vela::backend
         static constexpr uint32_t k_framesInFlight{2};
 
         Pass& addRenderGraphPass(const std::string& name, std::unique_ptr<Pass> pass);
+
+        void buildRenderGraphOrder();
+        void cullRenderGraphOrder(const std::vector<std::vector<size_t>>& successors);
 
         void allocateAllRenderGraphPassOutputs();
         void allocateRenderGraphPassOutputs(const PassDeclaration& declaration,
@@ -97,6 +114,9 @@ namespace vela::backend
         std::vector<VkFence> m_inFlightFences;
         std::vector<VkCommandBuffer> m_commandBuffers;
 
+        math::Mat4 m_view;
+        math::Mat4 m_projection;
+
         std::vector<VkSemaphore> m_renderFinished;
 
         VkDevice m_device{VK_NULL_HANDLE};
@@ -117,6 +137,13 @@ namespace vela::backend
         std::array<VmaAllocation, k_framesInFlight> m_perViewBufferAllocation{VK_NULL_HANDLE};
         std::array<void*, k_framesInFlight> m_perViewMapped{nullptr};
 
+        VkQueryPool m_queryPool{VK_NULL_HANDLE};
+
+        graphics::FrameStats m_frameStats;
+
+        float m_timestampPeriod{0.0f};
+        bool m_gpuTimingSupported{false};
+        std::array<bool, k_framesInFlight> m_timestampsWritten{};
     };
 } //namespace vela::backend
 

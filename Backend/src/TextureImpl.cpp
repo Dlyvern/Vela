@@ -2,20 +2,10 @@
 #include "ContextImpl.hpp"
 #include "Vela/Core/Context.hpp"
 
+#include "Formats.hpp"
+
 #include <cstring>
 #include <stdexcept>
-
-namespace
-{
-    VkFormat toVkFormat(vela::graphics::TextureFormat format)
-    {
-        switch (format)
-        {
-            case vela::graphics::TextureFormat::RGBA8Unorm: return VK_FORMAT_R8G8B8A8_UNORM;
-            default:                                        return VK_FORMAT_R8G8B8A8_SRGB;
-        }
-    }
-} //namespace
 
 namespace vela::backend
 {
@@ -23,6 +13,9 @@ namespace vela::backend
     {
         if (image.width == 0 || image.height == 0)
             throw std::runtime_error("Image extent must not be zero");
+
+        if (graphics::isDepthFormat(image.format))
+            throw std::runtime_error("Texture cannot be created from a depth format");
 
         const size_t expected = static_cast<size_t>(image.width) * image.height * graphics::bytesPerPixel(image.format);
 

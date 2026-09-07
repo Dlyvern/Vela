@@ -7,6 +7,7 @@
 #include "Vela/Graphics/Material.hpp"
 
 #include "Pipeline.hpp"
+#include "DescriptorPool.hpp"
 
 namespace vela::core
 {
@@ -38,9 +39,8 @@ namespace vela::backend
         graphics::MaterialDescription m_materialDescription;
         PipelineDescription m_pipelineDescription;
 
-        //TODO Every material should not create additional VkDescriptorPool
-        VkDescriptorPool m_descriptorPool{VK_NULL_HANDLE};
-        VkDescriptorSet m_descriptorSet{VK_NULL_HANDLE};
+        DescriptorPool* m_descriptorPool{nullptr};
+        DescriptorSetAllocation m_descriptorSet;
         VkDescriptorSetLayout m_descriptorSetLayout{VK_NULL_HANDLE};
         VkPipelineLayout m_pipelineLayout{VK_NULL_HANDLE};
         VkDevice m_device{VK_NULL_HANDLE};

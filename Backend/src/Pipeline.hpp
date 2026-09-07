@@ -11,6 +11,7 @@
 
 #include "Vela/Graphics/Vertex.hpp"
 #include "Pass.hpp"
+#include "Vela/Graphics/RenderTypes.hpp"
 
 namespace vela::backend
 {
@@ -37,11 +38,6 @@ namespace vela::backend
         std::unordered_map<uint64_t, VkPipelineLayout> m_pipelineLayouts;
     };
 
-    enum class BlendMode : uint8_t
-    {
-        Opaque = 0,
-    };
-
     uint64_t hashShaderCode(std::span<const uint32_t> vertexShader, std::span<const uint32_t> fragmentShader);
 
     struct PipelineDescription
@@ -56,8 +52,8 @@ namespace vela::backend
         VkFrontFace frontFace{VK_FRONT_FACE_CLOCKWISE};
         bool depthTest{true};
         bool depthWrite{true};
+        graphics::BlendMode blend{graphics::BlendMode::Opaque};
         VkCompareOp depthCompare{VK_COMPARE_OP_LESS};
-        BlendMode blend{BlendMode::Opaque};
     };
 
     class PipelineCache

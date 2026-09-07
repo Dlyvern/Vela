@@ -1,9 +1,5 @@
 #include "Vela/Core/Window.hpp"
 
-#include <stdexcept>
-
-#include <utility>
-
 namespace vela::core
 {
     Window::Window(IWindowBackend& windowBackend, const WindowPreferences& windowPreferences)
@@ -49,6 +45,31 @@ namespace vela::core
         other.m_nativeWindow = nullptr;
 
         return *this;
+    }
+
+    std::span<const Event> Window::events() const
+    {
+        return m_windowBackend->events(m_nativeWindow);
+    }
+
+    bool Window::isKeyDown(Key key) const
+    {
+        return m_windowBackend->isKeyDown(m_nativeWindow, key);
+    }
+
+    bool Window::isMouseButtonDown(MouseButton button) const
+    {
+        return m_windowBackend->isMouseButtonDown(m_nativeWindow, button);
+    }
+
+    void Window::getCursorPosition(double& x, double& y) const
+    {
+        m_windowBackend->getCursorPosition(m_nativeWindow, x, y);
+    }
+
+    void Window::setCursorMode(CursorMode mode)
+    {
+        m_windowBackend->setCursorMode(m_nativeWindow, mode);
     }
 
     void Window::pollEvents()

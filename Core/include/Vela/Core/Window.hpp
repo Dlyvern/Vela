@@ -38,6 +38,14 @@ namespace vela::core
 
         std::vector<MonitorInfo> monitors() const;
 
+        [[nodiscard]] std::span<const Event> events() const;
+
+        [[nodiscard]] bool isKeyDown(Key key) const;
+        [[nodiscard]] bool isMouseButtonDown(MouseButton button) const;
+        void getCursorPosition(double& x, double& y) const;
+
+        void setCursorMode(CursorMode mode);
+
         ~Window();
 
     private:

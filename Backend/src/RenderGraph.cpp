@@ -1,8 +1,6 @@
 #include "Vela/Graphics/RenderGraph.hpp"
 
-#include <stdexcept>
 #include "RenderGraphImpl.hpp"
-#include "ContextImpl.hpp"
 #include "Vela/Core/Context.hpp"
 
 namespace vela::graphics
@@ -28,34 +26,29 @@ namespace vela::graphics
 
     RenderGraph& RenderGraph::operator=(RenderGraph&&) noexcept = default;
 
-    void RenderGraph::beginFrame()
+    Status RenderGraph::addPass(const std::string& name, std::unique_ptr<Pass> pass)
     {
-        m_impl->beginFrame();
+        return m_impl->addPass(name, std::move(pass));
     }
 
-    void RenderGraph::updatePerViewDescriptors(const math::Mat4& view, const math::Mat4& projection)
+    FrameStats RenderGraph::getFrameStats() const
     {
-        m_impl->updatePerViewDescriptors(view, projection);
+        return m_impl->getFrameStats();
     }
 
-    void RenderGraph::beginPass(const std::string& renderGraphPassName)
+    void RenderGraph::setPresentSource(const std::string& attachmentName)
     {
-        m_impl->beginPass(renderGraphPassName);
+        m_impl->setPresentSource(attachmentName);
     }
 
-    void RenderGraph::endPass()
+    Status RenderGraph::execute()
     {
-        m_impl->endPass();
+        return m_impl->execute();
     }
 
-    void RenderGraph::endFrame()
+    void RenderGraph::setView(const math::Mat4& view, const math::Mat4& projection)
     {
-        m_impl->endFrame();
-    }
-
-    void RenderGraph::draw(const graphics::Mesh& mesh, const graphics::Material& material, const math::Mat4& model)
-    {
-        m_impl->draw(mesh, material, model);
+        m_impl->setView(view, projection);
     }
 
     backend::RenderGraphImpl* RenderGraph::impl() const

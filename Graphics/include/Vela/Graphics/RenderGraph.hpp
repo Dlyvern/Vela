@@ -5,6 +5,9 @@
 
 #include "Vela/Result.hpp"
 #include "Vela/Math/Matrix.hpp"
+#include "FrameStats.hpp"
+
+#include "Pass.hpp"
 
 namespace vela::core
 {
@@ -35,15 +38,17 @@ namespace vela::graphics
         RenderGraph(const RenderGraph&) = delete;
         RenderGraph& operator=(const RenderGraph&) = delete;
 
-        void beginFrame();
+        [[nodiscard]] Status execute();
 
-        void beginPass(const std::string& renderGraphPassName);
-        void draw(const graphics::Mesh& mesh, const graphics::Material& material, const math::Mat4& model);
-        void updatePerViewDescriptors(const math::Mat4& view, const math::Mat4& projection);
-        void endPass();
-        void endFrame();
+        void setView(const math::Mat4& view, const math::Mat4& projection);
+
+        [[nodiscard]] Status addPass(const std::string& name, std::unique_ptr<Pass> pass);
+
+        void setPresentSource(const std::string& attachmentName);
 
         backend::RenderGraphImpl* impl() const;
+
+        [[nodiscard]]FrameStats getFrameStats() const;
 
     private:
         RenderGraph(core::Context& context);

@@ -6,6 +6,7 @@
 #include "Vela/Core/IWindowBackend.hpp"
 #include "Vela/Core/ContextPreferences.hpp"
 #include "Vela/Result.hpp"
+#include "Vela/Core/MemoryStats.hpp"
 
 namespace vela::graphics
 {
@@ -31,6 +32,7 @@ namespace vela::core
         static Result<Context> create(Window& window, const ContextPreferences& contextPreferences = {});
 
         [[nodiscard]] Status attach(Window& window);
+        [[nodiscard]] MemoryStats getMemoryStats() const;
 
         void waitIdle();
 

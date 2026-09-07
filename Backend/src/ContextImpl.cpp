@@ -1,4 +1,5 @@
 #include "ContextImpl.hpp"
+#include <array>
 #include <vector>
 #include <stdexcept>
 #include <iostream>
@@ -30,6 +31,7 @@ namespace vela::backend
 
         vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
 
+        m_descriptorPool.reset();
         m_layoutCache.reset();
 
         vkDestroyDevice(m_device, nullptr);
@@ -41,6 +43,38 @@ namespace vela::backend
     VmaAllocator ContextImpl::getAllocator() const
     {
         return m_allocator;
+    }
+
+    const VkPhysicalDeviceProperties& ContextImpl::getPhysicalDeviceProperties() const
+    {
+        return m_physicalDeviceProperties;
+    }
+
+    uint32_t ContextImpl::getGraphicsTimestampValidBits() const
+    {
+        return m_graphicsTimestampValidBits;
+    }
+
+    core::MemoryStats ContextImpl::getMemoryStats() const
+    {
+        std::array<VmaBudget, VK_MAX_MEMORY_HEAPS> budgets{};
+        vmaGetHeapBudgets(m_allocator, budgets.data());
+
+        core::MemoryStats memoryStats{};
+        memoryStats.budgetFromDriver = m_memoryBudgetEnabled;
+
+        for (uint32_t heap = 0; heap < m_physicalDeviceMemoryProperties.memoryHeapCount; ++heap)
+        {
+            if ((m_physicalDeviceMemoryProperties.memoryHeaps[heap].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) == 0)
+                continue;
+
+            memoryStats.deviceBytesUsed += budgets[heap].usage;
+            memoryStats.deviceBytesBudget += budgets[heap].budget;
+            memoryStats.deviceBytesAllocated += budgets[heap].statistics.allocationBytes;
+            memoryStats.allocationCount += budgets[heap].statistics.allocationCount;
+        }
+
+        return memoryStats;
     }
 
     void ContextImpl::createAllocator()
@@ -55,6 +89,16 @@ namespace vela::backend
         allocInfo.device = m_device;
         allocInfo.vulkanApiVersion = m_vulkanApiVersion;
         allocInfo.pVulkanFunctions = &vkFuncs;
+
+        m_memoryBudgetEnabled = checkDeviceExtension(m_physicalDevice, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+
+        if(m_memoryBudgetEnabled)
+        {
+            allocInfo.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
+            std::cout << "Driver does have VK_EXT_MEMORY_BUDGET_EXTENSION_NAME extension\n";
+        }
+        else
+            std::cerr << "Driver does not have VK_EXT_MEMORY_BUDGET_EXTENSION_NAME extension\n";
 
         if (vmaCreateAllocator(&allocInfo, &m_allocator) != VK_SUCCESS)
             throw std::runtime_error("Failed to create VMA allocator");
@@ -399,6 +443,16 @@ namespace vela::backend
 
             logSelectedDevice(fallbackProperties);
         }
+
+        vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &m_physicalDeviceMemoryProperties);
+        vkGetPhysicalDeviceProperties(m_physicalDevice, &m_physicalDeviceProperties);
+
+        uint32_t queueFamilyCount{0};
+        vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount, nullptr);
+        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount, queueFamilies.data());
+
+        m_graphicsTimestampValidBits = queueFamilies[m_queueFamilyIndices.graphics.value()].timestampValidBits;
     }
 
     void ContextImpl::createDevice()
@@ -450,6 +504,7 @@ namespace vela::backend
         vkGetDeviceQueue(m_device, m_queueFamilyIndices.transfer.value(), 0, &m_transferQueue);
 
         m_layoutCache.emplace(m_device);
+        m_descriptorPool.emplace(m_device);
 
         VkDescriptorSetLayoutBinding perViewBinding{};
         perViewBinding.binding = 0;
@@ -463,6 +518,11 @@ namespace vela::backend
     LayoutCache& ContextImpl::getLayoutCache()
     {
         return *m_layoutCache;
+    }
+
+    DescriptorPool& ContextImpl::getDescriptorPool()
+    {
+        return *m_descriptorPool;
     }
 
     VkDescriptorSetLayout ContextImpl::getPerViewDescriptorSetLayout() const
@@ -558,6 +618,25 @@ namespace vela::backend
         extent.height = std::clamp(extent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
 
         return extent;
+    }
+
+    bool ContextImpl::checkDeviceExtension(VkPhysicalDevice physicalDevice, const std::string& extensionName)
+    {
+        uint32_t extensionCount = 0;
+        vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, nullptr);
+
+        std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+        vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, availableExtensions.data());
+
+        for (const auto& extension : availableExtensions)
+        {
+            if (strcmp(extension.extensionName, extensionName.c_str()) == 0) 
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     bool ContextImpl::checkInstanceExtensions(const std::vector<const char*>& extensions)
@@ -657,7 +736,7 @@ namespace vela::backend
 #ifdef VELA_DEBUG
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif
-
+        
         if(!checkInstanceExtensions(extensions))
             throw std::runtime_error("Required Vulkan instance extensions are unavailable");
 

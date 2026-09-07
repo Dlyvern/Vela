@@ -5,11 +5,11 @@
 
 namespace vela::graphics
 {
-    Result<Mesh> Mesh::create(core::Context& ctx, std::span<const std::byte> vertexData, uint32_t vertexCount)
+    Result<Mesh> Mesh::create(core::Context& ctx, std::span<const std::byte> vertexData, uint32_t vertexCount, std::span<const uint32_t> indices)
     {
         try
         {
-            return Mesh(ctx, vertexData, vertexCount);
+            return Mesh(ctx, vertexData, vertexCount, indices);
         }
         catch (const std::exception& error)
         {
@@ -17,8 +17,8 @@ namespace vela::graphics
         }
     }
 
-    Mesh::Mesh(core::Context& ctx, std::span<const std::byte> vertexData, uint32_t vertexCount)
-        : m_impl(std::make_unique<backend::MeshImpl>(ctx, vertexData, vertexCount)) {}
+    Mesh::Mesh(core::Context& ctx, std::span<const std::byte> vertexData, uint32_t vertexCount, std::span<const uint32_t> indices)
+        : m_impl(std::make_unique<backend::MeshImpl>(ctx, vertexData, vertexCount, indices)) {}
 
     Mesh::~Mesh() = default;
     Mesh::Mesh(Mesh&&) noexcept = default;

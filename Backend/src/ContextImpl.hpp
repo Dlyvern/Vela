@@ -4,10 +4,12 @@
 #include "volk.h"
 #include "Vela/Core/IWindowBackend.hpp"
 #include "Vela/Core/ContextPreferences.hpp"
+#include "Vela/Core/MemoryStats.hpp"
 
 #include "vk_mem_alloc.h"
 
 #include "Pipeline.hpp"
+#include "DescriptorPool.hpp"
 
 #include <optional>
 
@@ -32,6 +34,7 @@ namespace vela::backend
         VkSwapchainKHR getSwapchain() const;
 
         LayoutCache& getLayoutCache();
+        DescriptorPool& getDescriptorPool();
         VkDescriptorSetLayout getPerViewDescriptorSetLayout() const;
 
         const std::vector<VkImage>& getSwapchainImages() const;
@@ -49,6 +52,11 @@ namespace vela::backend
         void createCommandPool();
         void createAllocator();
         void recreateSwapchain();
+
+        core::MemoryStats getMemoryStats() const;
+
+        const VkPhysicalDeviceProperties& getPhysicalDeviceProperties() const;
+        uint32_t getGraphicsTimestampValidBits() const;
 
     private:
         struct QueueFamilyIndices
@@ -70,6 +78,7 @@ namespace vela::backend
         VkExtent2D framebufferExtent(const VkSurfaceCapabilitiesKHR& capabilities) const;
 
         bool checkInstanceExtensions(const std::vector<const char*>& extensions);
+        bool checkDeviceExtension(VkPhysicalDevice physicalDevice, const std::string& extensionName);
         bool checkValidationLayers(const std::vector<const char*>& requiredLayers);
 
         //TODO expose it to public API later
@@ -102,7 +111,13 @@ namespace vela::backend
 
         VmaAllocator m_allocator{VK_NULL_HANDLE};
 
+        VkPhysicalDeviceMemoryProperties m_physicalDeviceMemoryProperties;
+        VkPhysicalDeviceProperties m_physicalDeviceProperties;
+        uint32_t m_graphicsTimestampValidBits{0};
+        bool m_memoryBudgetEnabled{false};
+
         std::optional<LayoutCache> m_layoutCache;
+        std::optional<DescriptorPool> m_descriptorPool;
         VkDescriptorSetLayout m_perViewDescriptorSetLayout{VK_NULL_HANDLE};
     };
 

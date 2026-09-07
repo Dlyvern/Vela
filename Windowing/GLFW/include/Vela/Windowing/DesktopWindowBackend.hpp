@@ -2,6 +2,7 @@
 #define VELA_WINDOWING_DESKTOP_WINDOW_BACKEND_HPP
 
 #include "Vela/Core/IWindowBackend.hpp"
+#include "Vela/Core/Input.hpp"
 
 #include <unordered_map>
 
@@ -25,6 +26,12 @@ namespace vela::windowing
         void setMode(void* nativeWindow, core::WindowMode mode, uint32_t monitorIndex) override;
         std::vector<core::MonitorInfo> monitors() const override;
 
+        std::span<const core::Event> events(void* nativeWindow) const override;
+        bool isKeyDown(void* nativeWindow, core::Key key) const override;
+        bool isMouseButtonDown(void* nativeWindow, core::MouseButton button) const override;
+        void getCursorPosition(void* nativeWindow, double& x, double& y) const override;
+        void setCursorMode(void* nativeWindow, core::CursorMode mode) override;
+
         ~DesktopWindowBackend();
     private:
         struct WindowedRect
@@ -38,6 +45,8 @@ namespace vela::windowing
         static void glfwErrorCallback(int errorCode, const char* description);
 
         std::unordered_map<void*, WindowedRect> m_windowedRects;
+        std::unordered_map<void*, std::vector<core::Event>> m_events;
+
     };
 } //namespace vela::core
 

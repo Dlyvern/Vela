@@ -1,6 +1,7 @@
 #include "MaterialImpl.hpp"
 #include "Vela/Core/Context.hpp"
 #include "ContextImpl.hpp"
+#include "SpirvReflect.hpp"
 
 #include <stdexcept>
 
@@ -8,11 +9,13 @@
 
 #include "Vela/Math/Matrix.hpp"
 
+#include "Formats.hpp"
+
 namespace vela::backend
 {
     MaterialImpl::MaterialImpl(core::Context& context,
         const graphics::MaterialDescription& description) : m_materialDescription(description),
-        m_device(context.impl()->getDevice()), m_textureCount(description.textureCount)
+        m_device(context.impl()->getDevice())
     {
         if (description.vertexShader.empty() || description.fragmentShader.empty())
             throw std::runtime_error("Material requires vertex and fragment SPIR-V");
@@ -22,6 +25,8 @@ namespace vela::backend
 
         m_materialDescription.vertexShader = m_vertexShader;
         m_materialDescription.fragmentShader = m_fragmentShader;
+
+        m_textureCount = reflectTextureCount(m_vertexShader, m_fragmentShader);
 
         m_allocator = context.impl()->getAllocator();
 
@@ -40,25 +45,8 @@ namespace vela::backend
 
         if(m_textureCount > 0)
         {
-            std::vector<VkDescriptorPoolSize> poolSizes(1);
-            poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            poolSizes[0].descriptorCount = m_textureCount;
-
-            VkDescriptorPoolCreateInfo descriptorPoolCI{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-            descriptorPoolCI.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-            descriptorPoolCI.pPoolSizes = poolSizes.data();
-            descriptorPoolCI.maxSets = 1;
-
-            if(VkResult result = vkCreateDescriptorPool(m_device, &descriptorPoolCI, nullptr, &m_descriptorPool); result != VK_SUCCESS)
-                throw std::runtime_error("Failed to create descriptor pool");
-
-            VkDescriptorSetAllocateInfo descriptorSetAI{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-            descriptorSetAI.descriptorPool = m_descriptorPool;
-            descriptorSetAI.descriptorSetCount = 1;
-            descriptorSetAI.pSetLayouts = &m_descriptorSetLayout;
-
-            if(VkResult result = vkAllocateDescriptorSets(m_device, &descriptorSetAI, &m_descriptorSet); result != VK_SUCCESS)
-                throw std::runtime_error("Failed to allocate descriptor sets");
+            m_descriptorPool = &context.impl()->getDescriptorPool();
+            m_descriptorSet = m_descriptorPool->allocate(m_descriptorSetLayout);
         }
 
         VkPushConstantRange modelPushConstant{};
@@ -74,6 +62,13 @@ namespace vela::backend
         m_pipelineDescription.shaderHash = hashShaderCode(m_vertexShader, m_fragmentShader);
         m_pipelineDescription.vertexLayout = m_materialDescription.vertexLayout;
         m_pipelineDescription.layout = m_pipelineLayout;
+
+        m_pipelineDescription.cullMode = toVkCullMode(m_materialDescription.renderState.cull);
+        m_pipelineDescription.frontFace = toVkFrontFace(m_materialDescription.renderState.frontFace);
+        m_pipelineDescription.depthTest = m_materialDescription.renderState.depthTest;
+        m_pipelineDescription.depthWrite = m_materialDescription.renderState.depthWrite;
+        m_pipelineDescription.depthCompare = toVkCompare(m_materialDescription.renderState.depthCompare);
+        m_pipelineDescription.blend = m_materialDescription.renderState.blend;
     }
 
     VkDescriptorSetLayout MaterialImpl::getDescriptorSetLayout() const
@@ -98,7 +93,7 @@ namespace vela::backend
         imageInfo.sampler = sampler;
 
         VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-        write.dstSet = m_descriptorSet;
+        write.dstSet = m_descriptorSet.set;
         write.dstBinding = slot;
         write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         write.descriptorCount = 1;
@@ -116,12 +111,20 @@ namespace vela::backend
 
     MaterialImpl::~MaterialImpl()
     {
-        vkDestroyDescriptorPool(m_device, m_descriptorPool, nullptr);
+        if (m_descriptorPool != nullptr)
+        {
+            //TODO Replace with a deferred deletion queue on the context. This stalls the whole
+            //pipeline on every material destruction, but freeing a descriptor set that an
+            //in-flight command buffer still references is invalid
+            vkDeviceWaitIdle(m_device);
+
+            m_descriptorPool->free(m_descriptorSet);
+        }
     }
 
     VkDescriptorSet MaterialImpl::getDescriptorSet() const
     {
-        return m_descriptorSet;
+        return m_descriptorSet.set;
     }
 
     VkPipelineLayout MaterialImpl::getPipelineLayout() const

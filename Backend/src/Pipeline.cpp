@@ -58,12 +58,30 @@ namespace
         throw std::runtime_error("Unknown vertex attribute format");
     }
 
-    void applyBlendMode(VkPipelineColorBlendAttachmentState& attachment, vela::backend::BlendMode mode)
+    void applyBlendMode(VkPipelineColorBlendAttachmentState& attachment, vela::graphics::BlendMode mode)
     {
         switch (mode)
         {
-            case vela::backend::BlendMode::Opaque:
+            case vela::graphics::BlendMode::Opaque:
                 attachment.blendEnable = VK_FALSE;
+                return;
+            case vela::graphics::BlendMode::Alpha:
+                attachment.blendEnable = VK_TRUE;
+                attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+                attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+                attachment.colorBlendOp = VK_BLEND_OP_ADD;
+                attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+                attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+                attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+                return;
+            case vela::graphics::BlendMode::Additive:
+                attachment.blendEnable = VK_TRUE;
+                attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+                attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+                attachment.colorBlendOp = VK_BLEND_OP_ADD;
+                attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+                attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+                attachment.alphaBlendOp = VK_BLEND_OP_ADD;
                 return;
         }
 

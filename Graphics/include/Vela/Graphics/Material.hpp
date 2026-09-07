@@ -1,7 +1,8 @@
 #ifndef VELA_GRAPHICS_MATERIAL_HPP
 #define VELA_GRAPHICS_MATERIAL_HPP
 
-#include "Vela/Graphics/VertexLayout.hpp"
+#include "VertexLayout.hpp"
+#include "RenderTypes.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -27,12 +28,22 @@ namespace vela::graphics
 
 namespace vela::graphics
 {
+    struct RenderState
+    {
+        CullMode cull{CullMode::None};
+        FrontFace frontFace{FrontFace::Clockwise};
+        bool depthTest{true};
+        bool depthWrite{true};
+        DepthCompare depthCompare{DepthCompare::Less};
+        BlendMode blend{BlendMode::Opaque};
+    };
+
     struct MaterialDescription
     {
         std::span<const uint32_t> vertexShader;
         std::span<const uint32_t> fragmentShader;
         VertexLayout vertexLayout;
-        uint32_t textureCount{0};
+        RenderState renderState{};
     };
 
     class Material

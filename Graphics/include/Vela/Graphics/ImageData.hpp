@@ -5,19 +5,10 @@
 #include <cstdint>
 #include <span>
 
+#include "RenderTypes.hpp"
+
 namespace vela::graphics
 {
-    enum class TextureFormat : uint8_t
-    {
-        RGBA8Srgb = 0,
-        RGBA8Unorm
-    };
-
-    [[nodiscard]] constexpr uint32_t bytesPerPixel(TextureFormat)
-    {
-        return 4;
-    }
-
     struct ImageData
     {
         std::span<const std::byte> pixels;

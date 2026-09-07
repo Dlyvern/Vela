@@ -1,10 +1,12 @@
 #ifndef VELA_CORE_WINDOW_BACKEND_IWINDOW_BACKEND_HPP
 #define VELA_CORE_WINDOW_BACKEND_IWINDOW_BACKEND_HPP
 
-#include "Vela/Core/WindowTypes.hpp"
+#include "WindowTypes.hpp"
+#include "Input.hpp"
 
 #include <vector>
 #include <string>
+#include <span>
 
 namespace vela::core
 {
@@ -24,6 +26,16 @@ namespace vela::core
         virtual void close(void* nativeWindow) = 0;
         virtual void setMode(void* nativeWindow, WindowMode mode, uint32_t monitorIndex) = 0;
         virtual std::vector<MonitorInfo> monitors() const = 0;
+
+        //Input
+        // -----------------
+        virtual std::span<const Event> events(void* nativeWindow) const = 0;
+        virtual bool isKeyDown(void* nativeWindow, Key key) const = 0;
+        virtual bool isMouseButtonDown(void* nativeWindow, MouseButton button) const = 0;
+        virtual void getCursorPosition(void* nativeWindow, double& x, double& y) const = 0;
+        virtual void setCursorMode(void* nativeWindow, CursorMode mode) = 0;
+        // -----------------
+        
         virtual ~IWindowBackend() = default;
     };
 

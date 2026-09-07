@@ -11,6 +11,7 @@ option(VELA_WITH_GLFW "Build the GLFW windowing backend" ON)
 option(VELA_WITH_ASSETS "Build the optional asset loading target" ON)
 option(VELA_BUILD_SHARED "" OFF)
 option(VELA_BUILD_EXAMPLES "" ON)
+option(VELA_WITH_BUILTINS "" ON)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/CMake/Shaders.cmake)
 
@@ -22,6 +23,10 @@ add_subdirectory(Graphics)
 add_subdirectory(Core)
 add_subdirectory(Scene)
 add_subdirectory(Windowing)
+
+if(VELA_WITH_BUILTINS)
+    add_subdirectory(Builtins)
+endif()
 
 if(VELA_WITH_ASSETS)
     add_subdirectory(Assets)

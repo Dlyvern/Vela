@@ -1,0 +1,89 @@
+name: Build Vela
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+
+      - name: Verify and Update Submodules
+        run: |
+          git submodule update --init --recursive
+          git submodule status
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential ninja-build libvulkan-dev
+
+      - name: Configure and Build
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
+
+      - name: Install to Staging Dir
+        run: |
+          mkdir -p build/lib
+          cmake --install build --prefix staging/Vela
+
+      - name: Create Archive
+        run: |
+          tar -czvf Vela-linux.tar.gz -C staging Vela
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vela-linux
+          path: Vela-linux.tar.gz
+      
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+
+      - name: Verify and Update Submodules
+        run: |
+          git submodule update --init --recursive
+          git submodule status
+
+      - name: Install Vulkan SDK
+        run: |
+          curl -Lo vulkan-sdk.exe https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-sdk.exe
+          ./vulkan-sdk.exe --accept-licenses --default-answer --confirm-command install
+          $sdkPath = Get-ChildItem "C:\VulkanSDK" -Directory | Select-Object -Last 1 -ExpandProperty FullName
+          echo "VULKAN_SDK=$sdkPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          echo "VULKAN_SDK is set to: $sdkPath"
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DVulkan_ROOT="$env:VULKAN_SDK"
+
+      - name: Build
+        run: |
+          cmake --build build --config Release
+
+      - name: Install to Staging Dir
+        run: |
+          cmake --install build --prefix staging/Vela
+
+      - name: Create Archive
+        run: |
+          tar -czvf Vela-windows.tar.gz -C staging Vela
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vela-windows
+          path: Vela-windows.tar.gz

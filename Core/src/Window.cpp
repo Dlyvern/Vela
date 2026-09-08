@@ -47,6 +47,51 @@ namespace vela::core
         return *this;
     }
 
+    bool Window::popEvent(Event& event) const
+    {
+        return m_windowBackend->popEvent(m_nativeWindow, event);
+    }
+
+    std::vector<int> Window::getConnectedGamepads() const
+    {
+        return m_windowBackend->getConnectedGamepads();
+    }
+
+    bool Window::isGamepadConnected(int gamepadId) const
+    {
+        return m_windowBackend->isGamepadConnected(gamepadId);
+    }
+
+    std::string Window::getGamepadName(int gamepadId) const
+    {
+        return m_windowBackend->getGamepadName(gamepadId);
+    }
+
+    bool Window::isGamepadButtonDown(int gamepadId, GamepadButton button) const
+    {
+        return m_windowBackend->isGamepadButtonDown(gamepadId, button);
+    }
+
+    float Window::getGamepadAxisLeftX(int gamepadId) const
+    {
+        return m_windowBackend->getGamepadAxisLeftX(gamepadId);
+    }
+
+    float Window::getGamepadAxisLeftY(int gamepadId) const
+    {
+        return m_windowBackend->getGamepadAxisLeftY(gamepadId);
+    }
+
+    float Window::getGamepadAxisRightX(int gamepadId) const
+    {
+        return m_windowBackend->getGamepadAxisRightX(gamepadId);
+    }
+
+    float Window::getGamepadAxisRightY(int gamepadId) const
+    {
+        return m_windowBackend->getGamepadAxisRightY(gamepadId);
+    }
+
     std::span<const Event> Window::events() const
     {
         return m_windowBackend->events(m_nativeWindow);
@@ -74,7 +119,7 @@ namespace vela::core
 
     void Window::pollEvents()
     {
-        m_windowBackend->pollEvents();
+        m_windowBackend->pollEvents(m_nativeWindow);
     }
 
     void Window::setTitle(const std::string& title)

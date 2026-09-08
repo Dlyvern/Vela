@@ -34,6 +34,7 @@ namespace vela::backend
             throw std::runtime_error("Failed to create vertex buffer");
 
         std::memcpy(vertexBufferInfo.pMappedData, vertexData.data(), vertexData.size());
+        vmaFlushAllocation(m_allocator, m_vertexBufferAllocation, 0, VK_WHOLE_SIZE);
 
         if(!indices.empty())
         {
@@ -51,6 +52,7 @@ namespace vela::backend
                 throw std::runtime_error("Failed to create index buffer");
 
             std::memcpy(indexBufferInfo.pMappedData, indices.data(), indexBytes);
+            vmaFlushAllocation(m_allocator, m_indexBufferAllocation, 0, VK_WHOLE_SIZE);
         }
     }
 

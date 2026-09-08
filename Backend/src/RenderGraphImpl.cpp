@@ -660,6 +660,8 @@ namespace vela::backend
             CameraUBO mvp{m_view, m_projection};
 
             std::memcpy(m_perViewMapped[m_frameIndex], &mvp, sizeof(CameraUBO));
+            vmaFlushAllocation(m_context.impl()->getAllocator(),
+                m_perViewBufferAllocation[m_frameIndex], 0, VK_WHOLE_SIZE);
 
             for (size_t index : m_executionOrder)
                 runPass(m_renderGraphPasses[index]);

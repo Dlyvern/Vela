@@ -24,7 +24,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential ninja-build libvulkan-dev
+          sudo apt install -y build-essential ninja-build libvulkan-dev libwayland-dev libwayland-bin
 
       - name: Configure and Build
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
@@ -68,7 +68,7 @@ jobs:
 
       - name: Configure
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DVulkan_ROOT="$env:VULKAN_SDK"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVulkan_ROOT="$env:VULKAN_SDK"
 
       - name: Build
         run: |

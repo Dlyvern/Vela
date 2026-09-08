@@ -11,7 +11,9 @@
 #include <Vela/Builtins/ForwardGraph.hpp>
 #include <Vela/Builtins/Shapes.hpp>
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <iostream>
 #include <vector>
 
@@ -97,6 +99,48 @@ void cameraMovement(vela::scene::Camera& camera, float deltaTime, vela::core::Wi
     newPitch = std::clamp(newPitch, -89.0f, 89.0f);
 
     camera.setPitch(newPitch);
+
+    camera.updateCameraVectors();
+}
+
+void gamepadCameraMovement(vela::scene::Camera& camera, float deltaTime, vela::core::Window& window)
+{
+    const std::vector<int> gamepads = window.getConnectedGamepads();
+
+    if (gamepads.empty())
+        return;
+
+    const int gamepad = gamepads.front();
+
+    constexpr float movementSpeed = 5.0f;
+    constexpr float lookSpeed = 120.0f;
+
+    auto deadzoned = [](float value)
+    {
+        return std::abs(value) < 0.15f ? 0.0f : value;
+    };
+
+    auto position = camera.getPosition();
+
+    position.x += deadzoned(window.getGamepadAxisLeftX(gamepad)) * movementSpeed * deltaTime;
+    position.z += deadzoned(window.getGamepadAxisLeftY(gamepad)) * movementSpeed * deltaTime;
+
+    if (window.isGamepadButtonDown(gamepad, vela::core::GamepadButton::LEFT_BUMPER))
+        position.y -= movementSpeed * deltaTime;
+
+    if (window.isGamepadButtonDown(gamepad, vela::core::GamepadButton::RIGHT_BUMPER))
+        position.y += movementSpeed * deltaTime;
+
+    camera.setPosition(position);
+
+    const float lookX = deadzoned(window.getGamepadAxisRightX(gamepad));
+    const float lookY = deadzoned(window.getGamepadAxisRightY(gamepad));
+
+    if (lookX == 0.0f && lookY == 0.0f)
+        return;
+
+    camera.setYaw(camera.getYaw() + lookX * lookSpeed * deltaTime);
+    camera.setPitch(std::clamp(camera.getPitch() - lookY * lookSpeed * deltaTime, -89.0f, 89.0f));
 
     camera.updateCameraVectors();
 }
@@ -223,6 +267,8 @@ int main()
     static float rotation = 0.0f;
     static auto lastTime = std::chrono::steady_clock::now();
 
+    vela::core::Event event{};
+
     while(window.isOpen())
     {
         auto currentTime = std::chrono::steady_clock::now();
@@ -233,11 +279,10 @@ int main()
         window.pollEvents();
 
         cameraMovement(camera, deltaTime, window);
+        gamepadCameraMovement(camera, deltaTime, window);
 
-        if(!window.events().empty())
+        while(window.popEvent(event))
         {
-            auto event = window.events().front();
-
             if(event.type == vela::core::EventType::Resized)
             {
                 camera.setAspect((static_cast<float>(event.width) / static_cast<float>(event.height)));
@@ -261,7 +306,7 @@ int main()
                     window.close();
             }
 
-            if(event.type == vela::core::EventType::WindowCloseRequested)
+            if(event.type == vela::core::EventType::CloseRequested)
             {
                 std::cout << "We are all alone in this vulkan journey\n";
             }

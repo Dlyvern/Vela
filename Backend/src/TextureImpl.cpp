@@ -47,6 +47,7 @@ namespace vela::backend
         vmaCreateBuffer(m_allocator, &stagingCI, &stagingAllocCI, &stagingBuf, &stagingAlloc, &stagingInfo);
 
         std::memcpy(stagingInfo.pMappedData, image.pixels.data(), imageSize);
+        vmaFlushAllocation(m_allocator, stagingAlloc, 0, VK_WHOLE_SIZE);
 
         VkImageCreateInfo imageCI{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
         imageCI.imageType = VK_IMAGE_TYPE_2D;

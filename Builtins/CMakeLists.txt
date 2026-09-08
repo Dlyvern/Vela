@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.16)
-
 add_library(VelaBuiltins STATIC
         src/ScenePass.cpp
         src/ForwardGraph.cpp
@@ -9,7 +7,9 @@ add_library(VelaBuiltins STATIC
         include/Vela/Builtins/Shapes.hpp
 )
 
-target_include_directories(VelaBuiltins PUBLIC include)
+add_library(Vela::Builtins ALIAS VelaBuiltins)
+
+vela_public_includes(VelaBuiltins PUBLIC)
 
 target_link_libraries(VelaBuiltins
     PUBLIC
@@ -17,4 +17,7 @@ target_link_libraries(VelaBuiltins
     VelaFoundation
 )
 
-add_library(Vela::Builtins ALIAS VelaBuiltins)
+vela_install_target(VelaBuiltins
+    EXPORT_NAME Builtins
+    INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include
+)

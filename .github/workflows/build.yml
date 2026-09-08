@@ -2,13 +2,13 @@ name: Build Vela
 
 on:
   push:
-    branches: [ main, dev ]
+    branches: [main]
   pull_request:
-    branches: [ main, dev ]
+    branches: [main]
 
 jobs:
   build-linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -24,26 +24,39 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential ninja-build libvulkan-dev libwayland-dev libwayland-bin
+          sudo apt install -y \
+            build-essential \
+            ninja-build \
+            libvulkan-dev \
+            glslang-tools \
+            libwayland-dev \
+            libwayland-bin \
+            wayland-protocols \
+            libxkbcommon-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxi-dev
 
-      - name: Configure and Build
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel
 
       - name: Install to Staging Dir
-        run: |
-          mkdir -p build/lib
-          cmake --install build --prefix staging/Vela
+        run: cmake --install build --prefix "${{ github.workspace }}/staging/Vela"
 
       - name: Create Archive
-        run: |
-          tar -czvf Vela-linux.tar.gz -C staging Vela
+        run: tar -czvf Vela-linux.tar.gz -C staging Vela
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Vela-linux
           path: Vela-linux.tar.gz
-      
+
   build-windows:
     runs-on: windows-latest
     steps:
@@ -72,11 +85,11 @@ jobs:
 
       - name: Build
         run: |
-          cmake --build build --config Release
+          cmake --build build --parallel
 
       - name: Install to Staging Dir
         run: |
-          cmake --install build --prefix staging/Vela
+          cmake --install build --prefix "${{ github.workspace }}/staging/Vela"
 
       - name: Create Archive
         run: |

@@ -1,0 +1,17 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+set(VELA_WITH_GLFW @VELA_WITH_GLFW@)
+set(VELA_WITH_ASSETS @VELA_WITH_ASSETS@)
+set(VELA_WITH_BUILTINS @VELA_WITH_BUILTINS@)
+
+find_dependency(Vulkan)
+
+if(VELA_WITH_GLFW)
+    find_dependency(Threads)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/VelaTargets.cmake")
+
+check_required_components(Vela)

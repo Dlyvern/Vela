@@ -41,6 +41,16 @@ namespace vela::core
         return m_contextImpl->getMemoryStats();
     }
 
+    const DeviceInfo& Context::getDeviceInfo() const
+    {
+        return m_contextImpl->getDeviceInfo();
+    }
+
+    SwapchainInfo Context::getSwapchainInfo() const
+    {
+        return m_contextImpl->getSwapchainInfo();
+    }
+
     Status Context::attach(Window& window)
     {
         try

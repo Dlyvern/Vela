@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.16)
-
 add_library(VelaAssets STATIC
         src/Image.cpp
         src/Shader.cpp
@@ -8,7 +6,9 @@ add_library(VelaAssets STATIC
         include/Vela/Assets/Resources.hpp
 )
 
-target_include_directories(VelaAssets PUBLIC include)
+add_library(Vela::Assets ALIAS VelaAssets)
+
+vela_public_includes(VelaAssets PUBLIC)
 
 target_link_libraries(VelaAssets
     PUBLIC
@@ -18,4 +18,7 @@ target_link_libraries(VelaAssets
     stb_image
 )
 
-add_library(Vela::Assets ALIAS VelaAssets)
+vela_install_target(VelaAssets
+    EXPORT_NAME Assets
+    INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include
+)

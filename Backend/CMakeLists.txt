@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.16)
-
 set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 file(GLOB_RECURSE PROJECT_HEADERS CONFIGURE_DEPENDS ${SRC_DIR}/*.h ${SRC_DIR}/*.hpp)
@@ -9,6 +7,8 @@ add_library(VelaBackend STATIC
         ${PROJECT_SOURCES}
         ${PROJECT_HEADERS}
 )
+
+add_library(Vela::Backend ALIAS VelaBackend)
 
 target_include_directories(VelaBackend PRIVATE
         ${SRC_DIR}
@@ -25,3 +25,5 @@ target_link_libraries(VelaBackend
     VelaMath
     VelaFoundation
 )
+
+vela_install_target(VelaBackend EXPORT_NAME Backend)

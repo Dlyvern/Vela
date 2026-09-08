@@ -5,6 +5,7 @@
 #include "Vela/Core/IWindowBackend.hpp"
 #include "Vela/Core/ContextPreferences.hpp"
 #include "Vela/Core/MemoryStats.hpp"
+#include "Vela/Core/DeviceInfo.hpp"
 
 #include "vk_mem_alloc.h"
 
@@ -54,6 +55,8 @@ namespace vela::backend
         void recreateSwapchain();
 
         core::MemoryStats getMemoryStats() const;
+        const core::DeviceInfo& getDeviceInfo() const;
+        core::SwapchainInfo getSwapchainInfo() const;
 
         const VkPhysicalDeviceProperties& getPhysicalDeviceProperties() const;
         uint32_t getGraphicsTimestampValidBits() const;
@@ -74,6 +77,9 @@ namespace vela::backend
         };
 
         void createInstance(core::IWindowBackend& windowBackend);
+
+        void buildDeviceInfo(const VkPhysicalDeviceDriverProperties& driverProperties);
+        void logSelectedDevice() const;
 
         VkExtent2D framebufferExtent(const VkSurfaceCapabilitiesKHR& capabilities) const;
 
@@ -99,8 +105,9 @@ namespace vela::backend
         VkQueue m_computeQueue{VK_NULL_HANDLE};
 
         VkSwapchainKHR m_swapchain{VK_NULL_HANDLE};
-        VkFormat m_swapchainFormat{VK_FORMAT_UNDEFINED};   
+        VkFormat m_swapchainFormat{VK_FORMAT_UNDEFINED};
         VkExtent2D m_swapchainExtent{};
+        VkPresentModeKHR m_swapchainPresentMode{VK_PRESENT_MODE_FIFO_KHR};
 
         std::vector<VkImage> m_swapchainImages;
         std::vector<VkImageView> m_swapchainImageViews;
@@ -113,6 +120,7 @@ namespace vela::backend
 
         VkPhysicalDeviceMemoryProperties m_physicalDeviceMemoryProperties;
         VkPhysicalDeviceProperties m_physicalDeviceProperties;
+        core::DeviceInfo m_deviceInfo;
         uint32_t m_graphicsTimestampValidBits{0};
         bool m_memoryBudgetEnabled{false};
 

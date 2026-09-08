@@ -3,6 +3,8 @@
 #include "Formats.hpp"
 #include "RenderGraphImpl.hpp"
 
+#include <stdexcept>
+
 namespace
 {
     vela::backend::AttachmentOutput toAttachmentOutput(const vela::graphics::AttachmentSlot& slot, bool isDepth)

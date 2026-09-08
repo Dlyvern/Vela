@@ -194,11 +194,11 @@ namespace vela::backend
             return surfaceCapabilities;
         };
 
-        
-
         VkSurfaceFormatKHR format = getSwapchainFormat();
         VkPresentModeKHR presentMode = getSwapchainPresentMode();
         VkSurfaceCapabilitiesKHR surfaceCapabilities = getSwapchainExtent();
+
+        m_swapchainPresentMode = presentMode;
 
         uint32_t imageCount = surfaceCapabilities.minImageCount + 1;
         if (surfaceCapabilities.maxImageCount > 0 && imageCount > surfaceCapabilities.maxImageCount)
@@ -386,21 +386,6 @@ namespace vela::backend
             return true;
         };
 
-        auto logSelectedDevice = [this](const VkPhysicalDeviceProperties& properties)
-        {
-            std::cout << "Selected GPU: \n ------------------------------------------\n";
-
-            std::cout << "Name: " << properties.deviceName << '\n';
-            std::cout << "API version: " << properties.apiVersion << '\n';
-            std::cout << "Driver version: " << properties.driverVersion << '\n';
-            std::cout << "Present queue family " << m_queueFamilyIndices.present.value() << '\n';
-            std::cout << "Graphics queue family " << m_queueFamilyIndices.graphics.value() << '\n';
-            std::cout << "Transfer queue family " << m_queueFamilyIndices.transfer.value() << '\n';
-            std::cout << "Compute queue family " << m_queueFamilyIndices.compute.value() << '\n';
-
-            std::cout << "------------------------------------------\n";
-        };
-
         const VkPhysicalDeviceType preferredType = gpuTypeToVk(m_contextPreferences.preferredGpu);
 
         VkPhysicalDevice fallbackDevice{VK_NULL_HANDLE};
@@ -418,7 +403,6 @@ namespace vela::backend
             if(physicalDeviceProperties.deviceType == preferredType)
             {
                 m_physicalDevice = physicalDevice;
-                logSelectedDevice(physicalDeviceProperties);
                 break;
             }
 
@@ -440,12 +424,18 @@ namespace vela::backend
 
             std::cerr << "No " << gpuPreferenceName(m_contextPreferences.preferredGpu)
                       << " GPU available, falling back to \"" << fallbackProperties.deviceName << "\"\n";
-
-            logSelectedDevice(fallbackProperties);
         }
 
         vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &m_physicalDeviceMemoryProperties);
-        vkGetPhysicalDeviceProperties(m_physicalDevice, &m_physicalDeviceProperties);
+
+        VkPhysicalDeviceDriverProperties driverProperties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+
+        VkPhysicalDeviceProperties2 physicalDeviceProperties2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+        physicalDeviceProperties2.pNext = &driverProperties;
+
+        vkGetPhysicalDeviceProperties2(m_physicalDevice, &physicalDeviceProperties2);
+
+        m_physicalDeviceProperties = physicalDeviceProperties2.properties;
 
         uint32_t queueFamilyCount{0};
         vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount, nullptr);
@@ -453,6 +443,137 @@ namespace vela::backend
         vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount, queueFamilies.data());
 
         m_graphicsTimestampValidBits = queueFamilies[m_queueFamilyIndices.graphics.value()].timestampValidBits;
+
+        buildDeviceInfo(driverProperties);
+        logSelectedDevice();
+    }
+
+    void ContextImpl::buildDeviceInfo(const VkPhysicalDeviceDriverProperties& driverProperties)
+    {
+        const VkPhysicalDeviceLimits& limits = m_physicalDeviceProperties.limits;
+
+        m_deviceInfo = core::DeviceInfo{};
+
+        m_deviceInfo.name = m_physicalDeviceProperties.deviceName;
+
+        switch (m_physicalDeviceProperties.deviceType)
+        {
+            case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: m_deviceInfo.type = core::DeviceType::IntegratedGpu; break;
+            case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:   m_deviceInfo.type = core::DeviceType::DiscreteGpu;   break;
+            case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:    m_deviceInfo.type = core::DeviceType::VirtualGpu;    break;
+            case VK_PHYSICAL_DEVICE_TYPE_CPU:            m_deviceInfo.type = core::DeviceType::Cpu;           break;
+            default:                                     m_deviceInfo.type = core::DeviceType::Other;         break;
+        }
+
+        m_deviceInfo.vendorId = m_physicalDeviceProperties.vendorID;
+        m_deviceInfo.deviceId = m_physicalDeviceProperties.deviceID;
+
+        m_deviceInfo.driverName = driverProperties.driverName;
+        m_deviceInfo.driverInfo = driverProperties.driverInfo;
+
+        m_deviceInfo.apiVersion = core::Version{
+            VK_API_VERSION_MAJOR(m_physicalDeviceProperties.apiVersion),
+            VK_API_VERSION_MINOR(m_physicalDeviceProperties.apiVersion),
+            VK_API_VERSION_PATCH(m_physicalDeviceProperties.apiVersion)};
+
+        std::array<bool, VK_MAX_MEMORY_HEAPS> hostVisibleHeaps{};
+
+        for (uint32_t type = 0; type < m_physicalDeviceMemoryProperties.memoryTypeCount; ++type)
+        {
+            const VkMemoryType& memoryType = m_physicalDeviceMemoryProperties.memoryTypes[type];
+
+            if (memoryType.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+                hostVisibleHeaps[memoryType.heapIndex] = true;
+        }
+
+        for (uint32_t heap = 0; heap < m_physicalDeviceMemoryProperties.memoryHeapCount; ++heap)
+        {
+            const VkMemoryHeap& memoryHeap = m_physicalDeviceMemoryProperties.memoryHeaps[heap];
+
+            if (memoryHeap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+                m_deviceInfo.deviceLocalMemoryBytes += memoryHeap.size;
+
+            if (hostVisibleHeaps[heap])
+                m_deviceInfo.hostVisibleMemoryBytes += memoryHeap.size;
+        }
+
+        m_deviceInfo.unifiedMemory = m_deviceInfo.type == core::DeviceType::IntegratedGpu
+                                  || m_deviceInfo.type == core::DeviceType::Cpu;
+
+        m_deviceInfo.timestampsSupported = m_graphicsTimestampValidBits != 0 && limits.timestampPeriod != 0.0f;
+        m_deviceInfo.timestampPeriodNs = limits.timestampPeriod;
+
+        m_deviceInfo.maxTextureSize2D = limits.maxImageDimension2D;
+        m_deviceInfo.maxAnisotropy = limits.maxSamplerAnisotropy;
+
+        const VkSampleCountFlags sampleCounts = limits.framebufferColorSampleCounts
+                                              & limits.framebufferDepthSampleCounts;
+
+        for (const uint32_t samples : {64u, 32u, 16u, 8u, 4u, 2u})
+        {
+            if (sampleCounts & samples)
+            {
+                m_deviceInfo.maxMsaaSamples = samples;
+                break;
+            }
+        }
+    }
+
+    void ContextImpl::logSelectedDevice() const
+    {
+        constexpr uint64_t megabyte = 1024 * 1024;
+
+        std::cout << "Selected GPU: \n------------------------------------------\n";
+
+        std::cout << "Name: " << m_deviceInfo.name << '\n';
+        std::cout << "Type: " << core::toString(m_deviceInfo.type) << '\n';
+        std::cout << "Vendor / device id: 0x" << std::hex << m_deviceInfo.vendorId
+                  << " / 0x" << m_deviceInfo.deviceId << std::dec << '\n';
+        std::cout << "Driver: " << m_deviceInfo.driverName << " (" << m_deviceInfo.driverInfo << ")\n";
+        std::cout << "API version: " << m_deviceInfo.apiVersion.major << '.'
+                  << m_deviceInfo.apiVersion.minor << '.' << m_deviceInfo.apiVersion.patch << '\n';
+        std::cout << "Device local memory: " << m_deviceInfo.deviceLocalMemoryBytes / megabyte << " MB\n";
+        std::cout << "Host visible memory: " << m_deviceInfo.hostVisibleMemoryBytes / megabyte << " MB\n";
+        std::cout << "Unified memory: " << (m_deviceInfo.unifiedMemory ? "yes" : "no") << '\n';
+        std::cout << "Timestamps: " << (m_deviceInfo.timestampsSupported ? "yes" : "no")
+                  << " (period " << m_deviceInfo.timestampPeriodNs << " ns)\n";
+        std::cout << "Max 2D texture size: " << m_deviceInfo.maxTextureSize2D << '\n';
+        std::cout << "Max MSAA samples: " << m_deviceInfo.maxMsaaSamples << '\n';
+        std::cout << "Max anisotropy: " << m_deviceInfo.maxAnisotropy << '\n';
+        std::cout << "Present queue family " << m_queueFamilyIndices.present.value() << '\n';
+        std::cout << "Graphics queue family " << m_queueFamilyIndices.graphics.value() << '\n';
+        std::cout << "Transfer queue family " << m_queueFamilyIndices.transfer.value() << '\n';
+        std::cout << "Compute queue family " << m_queueFamilyIndices.compute.value() << '\n';
+
+        std::cout << "------------------------------------------\n";
+    }
+
+    const core::DeviceInfo& ContextImpl::getDeviceInfo() const
+    {
+        return m_deviceInfo;
+    }
+
+    core::SwapchainInfo ContextImpl::getSwapchainInfo() const
+    {
+        auto toVSync = [](VkPresentModeKHR presentMode)
+        {
+            switch (presentMode)
+            {
+                case VK_PRESENT_MODE_IMMEDIATE_KHR:    return core::VSync::Off;
+                case VK_PRESENT_MODE_MAILBOX_KHR:      return core::VSync::Fast;
+                case VK_PRESENT_MODE_FIFO_RELAXED_KHR: return core::VSync::Adaptive;
+                default:                               return core::VSync::On;
+            }
+        };
+
+        core::SwapchainInfo swapchainInfo{};
+        swapchainInfo.imageCount = static_cast<uint32_t>(m_swapchainImages.size());
+        swapchainInfo.width = m_swapchainExtent.width;
+        swapchainInfo.height = m_swapchainExtent.height;
+        swapchainInfo.requestedVSync = m_contextPreferences.preferredVSync;
+        swapchainInfo.actualVSync = toVSync(m_swapchainPresentMode);
+
+        return swapchainInfo;
     }
 
     void ContextImpl::createDevice()

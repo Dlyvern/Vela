@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 3.16)
-project(Vela LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.21)
+project(Vela VERSION 0.1.0 LANGUAGES CXX)
 
 add_compile_definitions($<$<CONFIG:Debug>:VELA_DEBUG>)
 
@@ -12,8 +12,15 @@ option(VELA_WITH_ASSETS "Build the optional asset loading target" ON)
 option(VELA_BUILD_SHARED "" OFF)
 option(VELA_BUILD_EXAMPLES "" ON)
 option(VELA_WITH_BUILTINS "" ON)
+option(VELA_INSTALL "Generate install and export rules for Vela" ${PROJECT_IS_TOP_LEVEL})
+
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/CMake/Shaders.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/CMake/Install.cmake)
+
+find_package(Vulkan REQUIRED)
 
 add_subdirectory(vendor)
 add_subdirectory(Foundation)
@@ -48,4 +55,35 @@ add_library(Vela::Native ALIAS VelaNative)
 
 if(VELA_BUILD_EXAMPLES)
     add_subdirectory(Examples)
+endif()
+
+if(VELA_INSTALL)
+    set_target_properties(Vela PROPERTIES EXPORT_NAME Vela)
+    set_target_properties(VelaNative PROPERTIES EXPORT_NAME Native)
+
+    install(TARGETS Vela VelaNative EXPORT VelaTargets)
+
+    install(EXPORT VelaTargets
+        FILE VelaTargets.cmake
+        NAMESPACE Vela::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Vela
+    )
+
+    configure_package_config_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/CMake/VelaConfig.cmake.in
+        ${CMAKE_CURRENT_BINARY_DIR}/VelaConfig.cmake
+        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Vela
+    )
+
+    write_basic_package_version_file(
+        ${CMAKE_CURRENT_BINARY_DIR}/VelaConfigVersion.cmake
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMajorVersion
+    )
+
+    install(FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/VelaConfig.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/VelaConfigVersion.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Vela
+    )
 endif()

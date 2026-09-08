@@ -7,6 +7,7 @@
 #include "Vela/Core/ContextPreferences.hpp"
 #include "Vela/Result.hpp"
 #include "Vela/Core/MemoryStats.hpp"
+#include "Vela/Core/DeviceInfo.hpp"
 
 namespace vela::graphics
 {
@@ -33,6 +34,8 @@ namespace vela::core
 
         [[nodiscard]] Status attach(Window& window);
         [[nodiscard]] MemoryStats getMemoryStats() const;
+        [[nodiscard]] const DeviceInfo& getDeviceInfo() const;
+        [[nodiscard]] SwapchainInfo getSwapchainInfo() const;
 
         void waitIdle();
 

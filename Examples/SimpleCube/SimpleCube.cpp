@@ -173,6 +173,13 @@ int main()
     if (auto attached = ctx.attach(window); !attached)
         return fail(attached.error());
 
+    const vela::core::SwapchainInfo swapchain = ctx.getSwapchainInfo();
+
+    std::cout << "Swapchain: " << swapchain.width << 'x' << swapchain.height
+              << " | images " << swapchain.imageCount
+              << " | vsync requested " << vela::core::toString(swapchain.requestedVSync)
+              << ", got " << vela::core::toString(swapchain.actualVSync) << '\n';
+
     vela::graphics::RenderScene renderScene;
 
     auto renderGraphResult = vela::builtins::forwardGraph(ctx, renderScene);

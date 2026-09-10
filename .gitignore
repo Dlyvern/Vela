@@ -1,2 +1,14 @@
+# CMake / Ninja build tree (all presets)
 build/
+build-*/
+
+# Visual Studio's own CMake integration and its cache
+out/
+.vs/
+
+# Local, machine-specific preset overrides
+CMakeUserPresets.json
+
+# clangd index and any copy of the compile database in the source tree
 .cache/
+compile_commands.json

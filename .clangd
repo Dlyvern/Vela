@@ -1,8 +1,4 @@
 CompileFlags:
-  Add:
-    - -std=gnu++20
-    - -Wall
-    - -Wextra
   CompilationDatabase: build
 
 Diagnostics:

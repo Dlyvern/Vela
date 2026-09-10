@@ -1,29 +1,44 @@
 {
+    "cmake.useCMakePresets": "always",
     "cmake.sourceDirectory": "${workspaceFolder}",
-    "cmake.buildDirectory": "${workspaceFolder}/build",
     "cmake.configureOnOpen": true,
-    "cmake.configureArgs": [
-        "-DVELA_BUILD_EXAMPLES=ON"
-    ],
 
     // Use clangd, not the Microsoft C/C++ extension, for IntelliSense.
     // Two providers fighting over the same files cause the phantom
     // "Use of undeclared identifier" / "cstddef not found" errors.
     "C_Cpp.intelliSenseEngine": "disabled",
+    "C_Cpp.autocomplete": "disabled",
+    "C_Cpp.errorSquiggles": "disabled",
 
     "clangd.arguments": [
         "--background-index",
         "--clang-tidy",
         "--header-insertion=never",
         "--completion-style=detailed",
-        "--query-driver=/usr/bin/g++,/usr/bin/gcc",
+        "--query-driver=/usr/bin/g++,/usr/bin/gcc,/usr/bin/clang++,C:/Program Files*/Microsoft Visual Studio/**/cl.exe,C:/Program Files*/LLVM/bin/clang*.exe",
         "--compile-commands-dir=${workspaceFolder}/build"
     ],
     "clangd.checkUpdates": true,
 
     "files.associations": {
         "*.hpp": "cpp",
-        "*.inl": "cpp"
+        "*.inl": "cpp",
+        "*.vert": "glsl",
+        "*.frag": "glsl",
+        "*.comp": "glsl",
+        "*.geom": "glsl"
     },
-    "editor.formatOnSave": false
+    "files.eol": "\n",
+    "editor.formatOnSave": false,
+
+    "files.watcherExclude": {
+        "**/build/**": true,
+        "**/out/**": true,
+        "**/.cache/**": true
+    },
+    "search.exclude": {
+        "build": true,
+        "out": true,
+        ".cache": true
+    }
 }

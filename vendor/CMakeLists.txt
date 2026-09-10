@@ -6,6 +6,8 @@ set(GLFW_INSTALL OFF CACHE BOOL "Disable GLFW install target" FORCE)
 set(GLFW_LIBRARY_TYPE STATIC CACHE STRING "Build GLFW as a static library" FORCE)
 add_subdirectory(glfw)
 
+target_compile_definitions(glfw INTERFACE GLFW_INCLUDE_NONE)
+
 # volk
 set(VOLK_INSTALL OFF CACHE BOOL "Disable volk install target" FORCE)
 set(VOLK_PULL_IN_VULKAN OFF CACHE BOOL "Vela supplies the Vulkan headers" FORCE)

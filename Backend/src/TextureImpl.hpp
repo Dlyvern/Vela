@@ -13,6 +13,8 @@ namespace vela::core
 
 namespace vela::backend
 {
+    class DeletionQueue;
+
     class TextureImpl
     {
     public:
@@ -31,6 +33,7 @@ namespace vela::backend
         VkImageView m_imageView{VK_NULL_HANDLE};
         VkSampler m_sampler{VK_NULL_HANDLE};
 
+        DeletionQueue* m_deletionQueue{nullptr};
     };
 } //namespace vela::backend
 

@@ -6,11 +6,14 @@
 
 #include "Pipeline.hpp"
 #include "Pass.hpp"
+#include "FrameConstants.hpp"
 
 #include "Vela/Result.hpp"
 #include "Vela/Math/Matrix.hpp"
 #include "Vela/Graphics/Pass.hpp"
 #include "Vela/Graphics/FrameStats.hpp"
+
+
 
 #include <memory>
 #include <cstdint>
@@ -84,10 +87,7 @@ namespace vela::backend
         VkBuffer m_boundIndexBuffer{VK_NULL_HANDLE};
         bool m_currentPassOpenedRendering{false};
 
-        // How many frames the CPU may run ahead of the GPU. One would mean the
-        // CPU blocks on the previous frame before it can record the next one,
-        // so every GPU/present stall lands directly in the frame time
-        static constexpr uint32_t k_framesInFlight{2};
+        static constexpr uint32_t k_framesInFlight = FrameConstants::k_framesInFlight;
 
         Pass& addRenderGraphPass(const std::string& name, std::unique_ptr<Pass> pass);
 

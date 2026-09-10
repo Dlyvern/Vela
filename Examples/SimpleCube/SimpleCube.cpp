@@ -240,7 +240,7 @@ int main()
 
     vela::graphics::Material spriteMaterial = std::move(spriteMaterialResult).value();
 
-    auto imageResult = vela::assets::Image::load(vela::assets::resources::find("VelixV.png").string());
+    auto imageResult = vela::assets::Image::load(vela::assets::resources::find("Cat.png").string());
 
     if (!imageResult)
         return fail(imageResult.error());

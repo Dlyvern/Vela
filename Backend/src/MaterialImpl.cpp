@@ -42,6 +42,7 @@ namespace vela::backend
         }
 
         m_descriptorSetLayout = context.impl()->getLayoutCache().getDescriptorSetLayout(bindings);
+        m_deletionQueue = &context.impl()->getDeletionQueue();
 
         if(m_textureCount > 0)
         {
@@ -111,15 +112,8 @@ namespace vela::backend
 
     MaterialImpl::~MaterialImpl()
     {
-        if (m_descriptorPool != nullptr)
-        {
-            //TODO Replace with a deferred deletion queue on the context. This stalls the whole
-            //pipeline on every material destruction, but freeing a descriptor set that an
-            //in-flight command buffer still references is invalid
-            vkDeviceWaitIdle(m_device);
-
-            m_descriptorPool->free(m_descriptorSet);
-        }
+        if(m_deletionQueue)
+            m_deletionQueue->push({.descriptorSet = m_descriptorSet});
     }
 
     VkDescriptorSet MaterialImpl::getDescriptorSet() const

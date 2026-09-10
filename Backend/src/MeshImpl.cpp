@@ -8,6 +8,7 @@
 namespace vela::backend
 {
     MeshImpl::MeshImpl(core::Context& ctx, std::span<const std::byte> vertexData, uint32_t vertexCount, std::span<const uint32_t> indices)
+    : m_deletionQueue(&ctx.impl()->getDeletionQueue())
     {
         for (uint32_t index : indices)
             if (index >= vertexCount)
@@ -83,9 +84,10 @@ namespace vela::backend
 
     MeshImpl::~MeshImpl()
     {
-        vmaDestroyBuffer(m_allocator, m_vertexBuffer, m_vertexBufferAllocation);
+        if(!m_deletionQueue)
+            return;
 
-        if(m_indexBuffer != VK_NULL_HANDLE)
-            vmaDestroyBuffer(m_allocator, m_indexBuffer, m_indexBufferAllocation);
+        m_deletionQueue->push({.buffer = m_vertexBuffer, .allocation = m_vertexBufferAllocation});
+        m_deletionQueue->push({.buffer = m_indexBuffer, .allocation = m_indexBufferAllocation});
     }
 } //namespace vela::backend

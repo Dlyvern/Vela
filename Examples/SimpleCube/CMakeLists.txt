@@ -3,8 +3,8 @@ target_link_libraries(SimpleCube PRIVATE Vela::Vela Vela::Assets Vela::Builtins)
 
 add_custom_command(TARGET SimpleCube POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/VelixV.png
-        $<TARGET_FILE_DIR:SimpleCube>/VelixV.png
+        ${CMAKE_CURRENT_SOURCE_DIR}/Cat.png
+        $<TARGET_FILE_DIR:SimpleCube>/Cat.png
     COMMENT "Staging assets for SimpleCube"
 )
 

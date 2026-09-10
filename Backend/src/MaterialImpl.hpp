@@ -16,6 +16,8 @@ namespace vela::core
 
 namespace vela::backend
 {
+    class DeletionQueue;
+    
     class MaterialImpl
     {
     public:
@@ -45,6 +47,7 @@ namespace vela::backend
         VkPipelineLayout m_pipelineLayout{VK_NULL_HANDLE};
         VkDevice m_device{VK_NULL_HANDLE};
         uint32_t m_textureCount{0};
+        DeletionQueue* m_deletionQueue{nullptr};
     };
 } //namespace vela::backend
 

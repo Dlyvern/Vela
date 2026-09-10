@@ -21,6 +21,8 @@ namespace vela::backend
     {
         vkDeviceWaitIdle(m_device);
 
+        m_deletionQueue->flushAll();
+
         // After every allocation it owns, never before.
         vmaDestroyAllocator(m_allocator);
 
@@ -48,6 +50,11 @@ namespace vela::backend
     const VkPhysicalDeviceProperties& ContextImpl::getPhysicalDeviceProperties() const
     {
         return m_physicalDeviceProperties;
+    }
+
+    DeletionQueue& ContextImpl::getDeletionQueue()
+    {
+        return *m_deletionQueue;
     }
 
     uint32_t ContextImpl::getGraphicsTimestampValidBits() const
@@ -102,6 +109,8 @@ namespace vela::backend
 
         if (vmaCreateAllocator(&allocInfo, &m_allocator) != VK_SUCCESS)
             throw std::runtime_error("Failed to create VMA allocator");
+
+        m_deletionQueue = std::make_unique<DeletionQueue>(m_device, m_allocator);
     }
 
     void ContextImpl::recreateSwapchain()

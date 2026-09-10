@@ -15,6 +15,8 @@ namespace vela::core
 
 namespace vela::backend
 {
+    class DeletionQueue;
+
     class MeshImpl
     {
     public:
@@ -38,6 +40,8 @@ namespace vela::backend
 
         uint32_t m_vertexCount{0};
         uint32_t m_indexCount{0};
+
+        DeletionQueue* m_deletionQueue{nullptr};
     };
 } //namespace vela::backend
 

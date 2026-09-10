@@ -467,6 +467,8 @@ namespace vela::backend
 
         vkWaitForFences(m_device, 1, &frameFence, VK_TRUE, UINT64_MAX);
 
+        m_context.impl()->getDeletionQueue().retireFrame();
+
         if (m_gpuTimingSupported && m_timestampsWritten[m_frameIndex])
         {
             uint64_t results[4]{};
@@ -917,15 +919,16 @@ namespace vela::backend
     
     void RenderGraphImpl::destroyAllAttachments()
     {
+        DeletionQueue& deletionQueue = m_context.impl()->getDeletionQueue();
+
         for(auto& [_, attachment] : m_attachments)
         {
             if(attachment.external)
                 continue;
 
-            vkDestroyImageView(m_device, attachment.view, nullptr);
-            vmaDestroyImage(m_context.impl()->getAllocator(), attachment.image, attachment.allocation);
-            attachment.view = VK_NULL_HANDLE;
-            attachment.image = VK_NULL_HANDLE;
+            deletionQueue.push({.image = attachment.image,
+                                .imageView = attachment.view,
+                                .allocation = attachment.allocation});
         }
 
         m_attachments.clear();

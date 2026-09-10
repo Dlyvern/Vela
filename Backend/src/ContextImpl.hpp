@@ -11,9 +11,20 @@
 
 #include "Pipeline.hpp"
 #include "DescriptorPool.hpp"
+#include "DeletionQueue.hpp"
 
 #include <optional>
+#include <memory>
 
+//TODO add a way to a public API to let people request extensions(Like for RTX for example)
+//TODO Over-Recreating on Every Little Event: Avoid rebuilding the swap chain continuously while a user is actively dragging the window border.
+// You can rate-limit resizes or wait until the resize action finishes. (Only on Linux, maybe worth doing at the end of development)
+
+
+//TODO change tactic:
+//New folder name and new functional
+//For example: particles and we make everything in API to let people make particles
+//Or rtx and we also make everything to make RTX work
 namespace vela::backend
 {
     class ContextImpl
@@ -61,6 +72,8 @@ namespace vela::backend
         const VkPhysicalDeviceProperties& getPhysicalDeviceProperties() const;
         uint32_t getGraphicsTimestampValidBits() const;
 
+        DeletionQueue& getDeletionQueue();
+
     private:
         struct QueueFamilyIndices
         {
@@ -75,6 +88,8 @@ namespace vela::backend
                     transfer.has_value() && present.has_value();
             }
         };
+
+        std::unique_ptr<DeletionQueue> m_deletionQueue{nullptr};
 
         void createInstance(core::IWindowBackend& windowBackend);
 

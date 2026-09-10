@@ -9,7 +9,7 @@
 
 namespace vela::backend
 {
-    TextureImpl::TextureImpl(core::Context& context, const graphics::ImageData& image)
+    TextureImpl::TextureImpl(core::Context& context, const graphics::ImageData& image) : m_deletionQueue(&context.impl()->getDeletionQueue())
     {
         if (image.width == 0 || image.height == 0)
             throw std::runtime_error("Image extent must not be zero");
@@ -177,13 +177,10 @@ namespace vela::backend
 
     TextureImpl::~TextureImpl()
     {
-        if (m_sampler)   
-            vkDestroySampler(m_device, m_sampler, nullptr);
+        if(!m_deletionQueue)
+            return;
 
-        if (m_imageView) 
-            vkDestroyImageView(m_device, m_imageView, nullptr);
-
-        if (m_image)     
-            vmaDestroyImage(m_allocator, m_image, m_allocation);
+        m_deletionQueue->push({.image = m_image, .imageView = m_imageView, .sampler = m_sampler,
+            .allocation = m_allocation});
     }
 } //namespace vela::backend

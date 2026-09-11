@@ -75,9 +75,9 @@ namespace vela::builtins::shapes3d
         return
         {
             {
-                {{ 0.0f, -k_extent, 0.0f}, {0.5f, 0.0f}},
-                {{ k_extent,  k_extent, 0.0f}, {1.0f, 1.0f}},
-                {{-k_extent,  k_extent, 0.0f}, {0.0f, 1.0f}},
+                {{ 0.0f, -k_extent, 0.0f}, {0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}},
+                {{ k_extent,  k_extent, 0.0f}, {1.0f, 1.0f}, {0.0f, 0.0f, 1.0f}},
+                {{-k_extent,  k_extent, 0.0f}, {0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}},
             },
             { 0, 1, 2 }
         };
@@ -88,10 +88,10 @@ namespace vela::builtins::shapes3d
         return
         {
             {
-                {{-k_extent, 0.0f,  k_extent}, {0.0f, 0.0f}},
-                {{ k_extent, 0.0f,  k_extent}, {1.0f, 0.0f}},
-                {{ k_extent, 0.0f, -k_extent}, {1.0f, 1.0f}},
-                {{-k_extent, 0.0f, -k_extent}, {0.0f, 1.0f}},
+                {{-k_extent, 0.0f,  k_extent}, {0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}},
+                {{ k_extent, 0.0f,  k_extent}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}},
+                {{ k_extent, 0.0f, -k_extent}, {1.0f, 1.0f}, {0.0f, 1.0f, 0.0f}},
+                {{-k_extent, 0.0f, -k_extent}, {0.0f, 1.0f}, {0.0f, 1.0f, 0.0f}},
             },
             { 0, 1, 2,  2, 3, 0 }
         };
@@ -102,35 +102,35 @@ namespace vela::builtins::shapes3d
         return
         {
             {
-                {{-k_extent, -k_extent,  k_extent}, {0.0f, 0.0f}},
-                {{ k_extent, -k_extent,  k_extent}, {1.0f, 0.0f}},
-                {{ k_extent,  k_extent,  k_extent}, {1.0f, 1.0f}},
-                {{-k_extent,  k_extent,  k_extent}, {0.0f, 1.0f}},
+                {{-k_extent, -k_extent,  k_extent}, {0.0f, 0.0f}, { 0.0f,  0.0f,  1.0f}},
+                {{ k_extent, -k_extent,  k_extent}, {1.0f, 0.0f}, { 0.0f,  0.0f,  1.0f}},
+                {{ k_extent,  k_extent,  k_extent}, {1.0f, 1.0f}, { 0.0f,  0.0f,  1.0f}},
+                {{-k_extent,  k_extent,  k_extent}, {0.0f, 1.0f}, { 0.0f,  0.0f,  1.0f}},
 
-                {{ k_extent, -k_extent, -k_extent}, {0.0f, 0.0f}},
-                {{-k_extent, -k_extent, -k_extent}, {1.0f, 0.0f}},
-                {{-k_extent,  k_extent, -k_extent}, {1.0f, 1.0f}},
-                {{ k_extent,  k_extent, -k_extent}, {0.0f, 1.0f}},
+                {{ k_extent, -k_extent, -k_extent}, {0.0f, 0.0f}, { 0.0f,  0.0f, -1.0f}},
+                {{-k_extent, -k_extent, -k_extent}, {1.0f, 0.0f}, { 0.0f,  0.0f, -1.0f}},
+                {{-k_extent,  k_extent, -k_extent}, {1.0f, 1.0f}, { 0.0f,  0.0f, -1.0f}},
+                {{ k_extent,  k_extent, -k_extent}, {0.0f, 1.0f}, { 0.0f,  0.0f, -1.0f}},
 
-                {{-k_extent, -k_extent, -k_extent}, {0.0f, 0.0f}},
-                {{-k_extent, -k_extent,  k_extent}, {1.0f, 0.0f}},
-                {{-k_extent,  k_extent,  k_extent}, {1.0f, 1.0f}},
-                {{-k_extent,  k_extent, -k_extent}, {0.0f, 1.0f}},
+                {{-k_extent, -k_extent, -k_extent}, {0.0f, 0.0f}, {-1.0f,  0.0f,  0.0f}},
+                {{-k_extent, -k_extent,  k_extent}, {1.0f, 0.0f}, {-1.0f,  0.0f,  0.0f}},
+                {{-k_extent,  k_extent,  k_extent}, {1.0f, 1.0f}, {-1.0f,  0.0f,  0.0f}},
+                {{-k_extent,  k_extent, -k_extent}, {0.0f, 1.0f}, {-1.0f,  0.0f,  0.0f}},
 
-                {{ k_extent, -k_extent,  k_extent}, {0.0f, 0.0f}},
-                {{ k_extent, -k_extent, -k_extent}, {1.0f, 0.0f}},
-                {{ k_extent,  k_extent, -k_extent}, {1.0f, 1.0f}},
-                {{ k_extent,  k_extent,  k_extent}, {0.0f, 1.0f}},
+                {{ k_extent, -k_extent,  k_extent}, {0.0f, 0.0f}, { 1.0f,  0.0f,  0.0f}},
+                {{ k_extent, -k_extent, -k_extent}, {1.0f, 0.0f}, { 1.0f,  0.0f,  0.0f}},
+                {{ k_extent,  k_extent, -k_extent}, {1.0f, 1.0f}, { 1.0f,  0.0f,  0.0f}},
+                {{ k_extent,  k_extent,  k_extent}, {0.0f, 1.0f}, { 1.0f,  0.0f,  0.0f}},
 
-                {{-k_extent,  k_extent,  k_extent}, {0.0f, 0.0f}},
-                {{ k_extent,  k_extent,  k_extent}, {1.0f, 0.0f}},
-                {{ k_extent,  k_extent, -k_extent}, {1.0f, 1.0f}},
-                {{-k_extent,  k_extent, -k_extent}, {0.0f, 1.0f}},
+                {{-k_extent,  k_extent,  k_extent}, {0.0f, 0.0f}, { 0.0f,  1.0f,  0.0f}},
+                {{ k_extent,  k_extent,  k_extent}, {1.0f, 0.0f}, { 0.0f,  1.0f,  0.0f}},
+                {{ k_extent,  k_extent, -k_extent}, {1.0f, 1.0f}, { 0.0f,  1.0f,  0.0f}},
+                {{-k_extent,  k_extent, -k_extent}, {0.0f, 1.0f}, { 0.0f,  1.0f,  0.0f}},
 
-                {{-k_extent, -k_extent, -k_extent}, {0.0f, 0.0f}},
-                {{ k_extent, -k_extent, -k_extent}, {1.0f, 0.0f}},
-                {{ k_extent, -k_extent,  k_extent}, {1.0f, 1.0f}},
-                {{-k_extent, -k_extent,  k_extent}, {0.0f, 1.0f}},
+                {{-k_extent, -k_extent, -k_extent}, {0.0f, 0.0f}, { 0.0f, -1.0f,  0.0f}},
+                {{ k_extent, -k_extent, -k_extent}, {1.0f, 0.0f}, { 0.0f, -1.0f,  0.0f}},
+                {{ k_extent, -k_extent,  k_extent}, {1.0f, 1.0f}, { 0.0f, -1.0f,  0.0f}},
+                {{-k_extent, -k_extent,  k_extent}, {0.0f, 1.0f}, { 0.0f, -1.0f,  0.0f}},
             },
             {
                  0,  1,  2,   2,  3,  0,
@@ -166,11 +166,14 @@ namespace vela::builtins::shapes3d
                 const float u = static_cast<float>(column) / static_cast<float>(segments);
                 const float theta = u * 2.0f * k_pi;
 
+                const float normalX = sinPhi * std::cos(theta);
+                const float normalY = cosPhi;
+                const float normalZ = sinPhi * std::sin(theta);
+
                 data.vertices.push_back({
-                    {k_extent * sinPhi * std::cos(theta),
-                     k_extent * cosPhi,
-                     k_extent * sinPhi * std::sin(theta)},
-                    {u, v}
+                    {k_extent * normalX, k_extent * normalY, k_extent * normalZ},
+                    {u, v},
+                    {normalX, normalY, normalZ}
                 });
             }
         }

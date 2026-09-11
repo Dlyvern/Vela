@@ -4,6 +4,7 @@
 #include "SpirvReflect.hpp"
 
 #include <algorithm>
+#include <map>
 #include <stdexcept>
 
 #include <vulkan/vulkan_core.h>
@@ -14,6 +15,11 @@
 
 namespace vela::backend
 {
+    namespace
+    {
+        constexpr uint32_t k_materialSet = 1;
+    }
+
     MaterialImpl::MaterialImpl(core::Context& context,
         const graphics::MaterialDescription& description) : m_materialDescription(description),
         m_device(context.impl()->getDevice())
@@ -31,21 +37,50 @@ namespace vela::backend
 
         m_allocator = context.impl()->getAllocator();
 
-        std::vector<VkDescriptorSetLayoutBinding> bindings(m_textureCount);
+        std::map<uint32_t, VkDescriptorSetLayoutBinding> bindingsBySlot;
 
-        for(uint32_t index = 0; index < m_textureCount; ++index)
+        auto collectBindings = [this, &bindingsBySlot](std::span<const uint32_t> shader, VkShaderStageFlags stage)
         {
-            auto& binding = bindings[index];
-            binding.binding = index;
-            binding.descriptorCount = 1;
-            binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        }
+            for (const ReflectedBinding& reflected : reflectBindings(shader))
+            {
+                if (reflected.set != k_materialSet)
+                    continue;
+
+                VkDescriptorSetLayoutBinding& binding = bindingsBySlot[reflected.binding];
+                binding.binding = reflected.binding;
+                binding.descriptorCount = 1;
+                binding.stageFlags |= stage;
+
+                switch (reflected.kind)
+                {
+                    case DescriptorKind::StorageBuffer:
+                        binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                        break;
+                    case DescriptorKind::UniformBuffer:
+                        binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                        break;
+                    case DescriptorKind::CombinedImageSampler:
+                        binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                        break;
+                }
+
+                m_bindingKinds[reflected.binding] = reflected.kind;
+            }
+        };
+
+        collectBindings(m_vertexShader, VK_SHADER_STAGE_VERTEX_BIT);
+        collectBindings(m_fragmentShader, VK_SHADER_STAGE_FRAGMENT_BIT);
+
+        std::vector<VkDescriptorSetLayoutBinding> bindings;
+        bindings.reserve(bindingsBySlot.size());
+
+        for (const auto& [slot, binding] : bindingsBySlot)
+            bindings.push_back(binding);
 
         m_descriptorSetLayout = context.impl()->getLayoutCache().getDescriptorSetLayout(bindings);
         m_deletionQueue = &context.impl()->getDeletionQueue();
 
-        if(m_textureCount > 0)
+        if(!bindings.empty())
         {
             m_descriptorPool = &context.impl()->getDescriptorPool();
             m_descriptorSet = m_descriptorPool->allocate(m_descriptorSetLayout);
@@ -131,6 +166,37 @@ namespace vela::backend
         write.pImageInfo = &imageInfo;
 
         vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
+
+        return {};
+    }
+
+    Status MaterialImpl::setStorageBuffer(uint32_t slot, VkBuffer buffer, VkDeviceSize size)
+    {
+        const auto kind = m_bindingKinds.find(slot);
+
+        if (kind == m_bindingKinds.end() || kind->second != DescriptorKind::StorageBuffer)
+            return Error{ErrorCode::InvalidArgument, "Material has no storage buffer at slot "
+                + std::to_string(slot)};
+
+        if (const auto bound = m_boundStorageBuffers.find(slot);
+            bound != m_boundStorageBuffers.end() && bound->second == buffer)
+            return {};
+
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = buffer;
+        bufferInfo.offset = 0;
+        bufferInfo.range = size;
+
+        VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        write.dstSet = m_descriptorSet.set;
+        write.dstBinding = slot;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        write.descriptorCount = 1;
+        write.pBufferInfo = &bufferInfo;
+
+        vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
+
+        m_boundStorageBuffers[slot] = buffer;
 
         return {};
     }

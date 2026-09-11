@@ -228,7 +228,6 @@ int main()
     ImGui::CreateContext();
 
     ImGui::StyleColorsDark();
-    
 
     auto fail = [](const vela::Error& error)
     {

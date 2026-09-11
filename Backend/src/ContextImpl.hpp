@@ -70,6 +70,8 @@ namespace vela::backend
 
         DeletionQueue& getDeletionQueue();
 
+        uint32_t getValidationMessageCount() const;
+
     private:
         struct QueueFamilyIndices
         {
@@ -88,6 +90,7 @@ namespace vela::backend
         std::unique_ptr<DeletionQueue> m_deletionQueue{nullptr};
 
         void createInstance(core::IWindowBackend& windowBackend);
+        void createDebugMessenger();
 
         void buildDeviceInfo(const VkPhysicalDeviceDriverProperties& driverProperties);
         void logSelectedDevice() const;
@@ -97,7 +100,8 @@ namespace vela::backend
 
         VkExtent2D framebufferExtent(const VkSurfaceCapabilitiesKHR& capabilities) const;
 
-        bool checkInstanceExtensions(const std::vector<const char*>& extensions);
+        bool checkInstanceExtensions(const std::vector<const char*>& extensions,
+            const std::vector<const char*>& layers);
         bool checkDeviceExtension(VkPhysicalDevice physicalDevice, const std::string& extensionName);
         bool checkValidationLayers(const std::vector<const char*>& requiredLayers);
 
@@ -109,6 +113,9 @@ namespace vela::backend
         VkPhysicalDevice m_physicalDevice{VK_NULL_HANDLE};
         VkDevice m_device{VK_NULL_HANDLE};
         VkInstance m_instance{VK_NULL_HANDLE};
+        VkDebugUtilsMessengerEXT m_debugMessenger{VK_NULL_HANDLE};
+        bool m_syncValidationEnabled{false};
+        static inline uint32_t m_validationMessageCount{0};
         VkSurfaceKHR m_surface{VK_NULL_HANDLE};
         void* m_nativeWindow{nullptr};
 

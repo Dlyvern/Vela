@@ -1,3 +1,6 @@
+add_library(cgltf INTERFACE)
+target_include_directories(cgltf INTERFACE ${CMAKE_CURRENT_LIST_DIR}/cgltf)
+
 add_library(imgui STATIC
     ${CMAKE_CURRENT_LIST_DIR}/imgui/imgui.cpp
     ${CMAKE_CURRENT_LIST_DIR}/imgui/imgui_draw.cpp

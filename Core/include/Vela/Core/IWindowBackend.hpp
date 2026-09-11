@@ -26,7 +26,8 @@ namespace vela::core
         virtual void waitEvents() = 0;
         virtual void close(void* nativeWindow) = 0;
         virtual void setMode(void* nativeWindow, WindowMode mode, uint32_t monitorIndex) = 0;
-        virtual std::vector<MonitorInfo> monitors() const = 0;
+        virtual std::vector<MonitorInfo> getMonitors() const = 0;
+        virtual bool getWindowPosition(void* nativeWindow, int& x, int& y) const = 0;
 
         //Input
         // -----------------

@@ -36,6 +36,7 @@ namespace vela::core
         [[nodiscard]] MemoryStats getMemoryStats() const;
         [[nodiscard]] const DeviceInfo& getDeviceInfo() const;
         [[nodiscard]] SwapchainInfo getSwapchainInfo() const;
+        [[nodiscard]] uint32_t getValidationMessageCount() const;
 
         void waitIdle();
 

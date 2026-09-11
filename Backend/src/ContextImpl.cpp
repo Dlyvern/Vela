@@ -6,6 +6,7 @@
 #include <cstring>
 #include <algorithm>
 #include <unordered_set>
+#include <cstdlib>
 
 namespace vela::backend
 { 
@@ -15,6 +16,43 @@ namespace vela::backend
         volkInitialize();
         createInstance(windowBackend);
         volkLoadInstance(m_instance);
+        createDebugMessenger();
+    }
+
+    uint32_t ContextImpl::getValidationMessageCount() const
+    {
+        return m_validationMessageCount;
+    }
+
+    void ContextImpl::createDebugMessenger()
+    {
+#ifdef VELA_DEBUG
+        if (vkCreateDebugUtilsMessengerEXT == nullptr)
+            return;
+
+        VkDebugUtilsMessengerCreateInfoEXT messengerCI{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
+
+        messengerCI.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
+                                    | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+
+        messengerCI.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
+                                | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
+                                | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+
+        messengerCI.pfnUserCallback = [](VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+            VkDebugUtilsMessageTypeFlagsEXT, const VkDebugUtilsMessengerCallbackDataEXT* callbackData, void*) -> VkBool32
+        {
+            ++m_validationMessageCount;
+
+            std::cerr << "[vulkan] " << (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT ? "error" : "warning")
+                      << ": " << (callbackData->pMessage != nullptr ? callbackData->pMessage : "") << '\n';
+
+            return VK_FALSE;
+        };
+
+        if (vkCreateDebugUtilsMessengerEXT(m_instance, &messengerCI, nullptr, &m_debugMessenger) != VK_SUCCESS)
+            std::cerr << "Failed to create debug messenger\n";
+#endif
     }
 
     ContextImpl::~ContextImpl()
@@ -45,6 +83,9 @@ namespace vela::backend
 
         if (m_surface != VK_NULL_HANDLE)
             vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
+
+        if (m_debugMessenger != VK_NULL_HANDLE)
+            vkDestroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
 
         if (m_instance != VK_NULL_HANDLE)
             vkDestroyInstance(m_instance, nullptr);
@@ -858,22 +899,30 @@ namespace vela::backend
         return false;
     }
 
-    bool ContextImpl::checkInstanceExtensions(const std::vector<const char*>& extensions)
+    bool ContextImpl::checkInstanceExtensions(const std::vector<const char*>& extensions,
+        const std::vector<const char*>& layers)
     {
-        uint32_t extensionCount = 0;
+        std::vector<VkExtensionProperties> availableExtensions;
 
-        VkResult result = vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount,
-            nullptr);
+        auto collect = [&availableExtensions](const char* layerName)
+        {
+            uint32_t extensionCount = 0;
 
-        if (result != VK_SUCCESS)
-            return false;
+            if (vkEnumerateInstanceExtensionProperties(layerName, &extensionCount, nullptr) != VK_SUCCESS)
+                return;
 
-        std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+            const size_t offset = availableExtensions.size();
+            availableExtensions.resize(offset + extensionCount);
 
-        result = vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, availableExtensions.data());
+            if (vkEnumerateInstanceExtensionProperties(layerName, &extensionCount,
+                    availableExtensions.data() + offset) != VK_SUCCESS)
+                availableExtensions.resize(offset);
+        };
 
-        if (result != VK_SUCCESS)
-            return false;
+        collect(nullptr);
+
+        for (const char* layer : layers)
+            collect(layer);
 
         for (const char* required : extensions)
         {
@@ -951,24 +1000,48 @@ namespace vela::backend
         appInfo.apiVersion = m_vulkanApiVersion;
 
         std::vector<const char*> extensions = windowBackend.requiredInstanceExtensions();
-
-#ifdef VELA_DEBUG
-        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-#endif
-        
-        if(!checkInstanceExtensions(extensions))
-            throw std::runtime_error("Required Vulkan instance extensions are unavailable");
-
         std::vector<const char*> layers;
 
 #ifdef VELA_DEBUG
+        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
         layers.push_back("VK_LAYER_KHRONOS_validation");
+
+        m_syncValidationEnabled = m_contextPreferences.syncValidation
+            || std::getenv("VELA_SYNC_VALIDATION") != nullptr;
+
+        if (m_syncValidationEnabled)
+            extensions.push_back(VK_EXT_LAYER_SETTINGS_EXTENSION_NAME);
 #endif
 
         if(!checkValidationLayers(layers))
             throw std::runtime_error("Required Vulkan layers are unavailable");
 
+        if(!checkInstanceExtensions(extensions, layers))
+            throw std::runtime_error("Required Vulkan instance extensions are unavailable");
+
         VkInstanceCreateInfo createInfo{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+
+        const VkBool32 enableSyncValidation = VK_TRUE;
+
+        const VkLayerSettingEXT layerSettings[]
+        {
+            {"VK_LAYER_KHRONOS_validation", "validate_sync", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &enableSyncValidation},
+            {"VK_LAYER_KHRONOS_validation", "syncval_shader_accesses_heuristic", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &enableSyncValidation},
+            {"VK_LAYER_KHRONOS_validation", "syncval_submit_time_validation", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &enableSyncValidation}
+        };
+
+        VkLayerSettingsCreateInfoEXT layerSettingsCI{VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT};
+        layerSettingsCI.settingCount = 3;
+        layerSettingsCI.pSettings = layerSettings;
+
+#ifdef VELA_DEBUG
+        if (m_syncValidationEnabled)
+        {
+            createInfo.pNext = &layerSettingsCI;
+            std::cout << "Synchronization validation enabled\n";
+        }
+#endif
+
         createInfo.pApplicationInfo = &appInfo;
         createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
         createInfo.ppEnabledExtensionNames = extensions.data();

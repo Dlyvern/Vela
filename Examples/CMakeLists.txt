@@ -1,3 +1,5 @@
 add_subdirectory(vendor)
 add_subdirectory(SimpleCube)
 add_subdirectory(ImguiIntegration)
+add_subdirectory(Particles)
+add_subdirectory(LittleEngine)

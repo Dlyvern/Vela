@@ -1,0 +1,64 @@
+#version 450
+
+layout(local_size_x = 64) in;
+
+struct Particle
+{
+    vec2 position;
+    vec2 velocity;
+    vec4 color;
+};
+
+layout(std430, set = 0, binding = 0) buffer Particles
+{
+    Particle particles[];
+} particleBuffer;
+
+layout(push_constant) uniform SimulationPC
+{
+    vec4 params;
+} simulationPc;
+
+float hash(uint value)
+{
+    value = (value << 13U) ^ value;
+    value = value * (value * value * 15731U + 789221U) + 1376312589U;
+
+    return float(value & 0x7fffffffU) / float(0x7fffffff);
+}
+
+void main()
+{
+    uint index = gl_GlobalInvocationID.x;
+
+    if (index >= particleBuffer.particles.length())
+        return;
+
+    float deltaTime = simulationPc.params.x;
+    float seeding = simulationPc.params.y;
+
+    if (seeding > 0.5)
+    {
+        particleBuffer.particles[index].position = vec2(hash(index) * 2.0 - 1.0,
+                                                        hash(index + 7717u) * 2.0 - 1.0);
+
+        particleBuffer.particles[index].velocity = vec2(hash(index + 131u) - 0.5,
+                                                        hash(index + 977u) - 0.5) * 0.6;
+
+        particleBuffer.particles[index].color = vec4(hash(index + 31u) * 0.5 + 0.5,
+                                                     hash(index + 61u) * 0.5 + 0.5,
+                                                     hash(index + 91u) * 0.5 + 0.5,
+                                                     1.0);
+        return;
+    }
+
+    vec2 position = particleBuffer.particles[index].position
+                  + particleBuffer.particles[index].velocity * deltaTime;
+
+    if (position.x < -1.0) position.x += 2.0;
+    if (position.x >  1.0) position.x -= 2.0;
+    if (position.y < -1.0) position.y += 2.0;
+    if (position.y >  1.0) position.y -= 2.0;
+
+    particleBuffer.particles[index].position = position;
+}

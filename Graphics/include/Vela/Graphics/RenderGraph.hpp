@@ -43,6 +43,7 @@ namespace vela::graphics
         void setView(const math::Mat4& view, const math::Mat4& projection);
 
         [[nodiscard]] Status addPass(const std::string& name, std::unique_ptr<Pass> pass);
+        [[nodiscard]] Status addComputePass(const std::string& name, std::unique_ptr<ComputePass> pass);
 
         void setPresentSource(const std::string& attachmentName);
 

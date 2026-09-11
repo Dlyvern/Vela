@@ -32,6 +32,8 @@ namespace vela::graphics
 {
     class Material;
     class Mesh;
+    class ComputePass;
+    class ComputeProgram;
 } //namespace vela::graphics
 
 namespace vela::backend
@@ -51,6 +53,8 @@ namespace vela::backend
         void bindVertexBuffer(const graphics::DynamicBuffer& buffer);
         void bindIndexBuffer(const graphics::DynamicBuffer& buffer);
         void setConstants(const math::Mat4& value);
+        void bindMaterialStorageBuffer(uint32_t slot, const std::string& bufferName);
+        void drawInstanced(uint32_t vertexCount, uint32_t instanceCount, uint32_t firstVertex, uint32_t firstInstance);
         void drawIndexed(uint32_t indexCount, uint32_t firstIndex, int32_t vertexOffset,
                  uint32_t instanceCount = 1, uint32_t firstInstance = 0);
         void setScissor(int32_t x, int32_t y, uint32_t width, uint32_t height);
@@ -58,6 +62,12 @@ namespace vela::backend
         void setPresentSource(std::string attachmentName);
 
         Status addPass(const std::string& name, std::unique_ptr<graphics::Pass> pass);
+        Status addComputePass(const std::string& name, std::unique_ptr<graphics::ComputePass> pass);
+
+        void bindComputeProgram(const graphics::ComputeProgram& program);
+        void bindStorageBuffer(const graphics::ComputeProgram& program, uint32_t slot, const std::string& bufferName);
+        void setComputeConstants(const math::Mat4& value);
+        void dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ);
 
         void setView(const math::Mat4& view, const math::Mat4& projection);
         
@@ -93,7 +103,7 @@ namespace vela::backend
 
         RegisteredPass* m_currentRenderGraphPass{nullptr};
 
-        const MaterialImpl* m_boundMaterial{nullptr};
+        MaterialImpl* m_boundMaterial{nullptr};
         VkPipeline m_boundPipeline{VK_NULL_HANDLE};
         VkPipelineLayout m_boundPipelineLayout{VK_NULL_HANDLE};
         uint32_t m_boundPushConstantSize{0};
@@ -144,6 +154,13 @@ namespace vela::backend
         bool m_isFrameValid{true};
 
         std::unordered_map<std::string, Attachment> m_attachments;
+        std::unordered_map<std::string, GraphBuffer> m_buffers;
+
+        void allocateGraphBuffers();
+        void destroyAllGraphBuffers();
+        void transitionGraphBuffers(const PassDeclaration& declaration, PassKind kind);
+
+        const graphics::ComputeProgram* m_boundComputeProgram{nullptr};
 
         uint32_t m_frameIndex{0};
         uint32_t m_currentImageIndex{0};

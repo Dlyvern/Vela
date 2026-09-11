@@ -33,10 +33,14 @@ namespace vela::core
         void getSize(int& width, int& height) const;
         void getFramebufferSize(int& width, int& height) const;
 
-        void setMode(WindowMode mode, uint32_t monitorIndex = 0);
+        static constexpr uint32_t k_currentMonitor{0xFFFFFFFFu};
+
+        void setMode(WindowMode mode, uint32_t monitorIndex = k_currentMonitor);
         WindowMode getMode() const;
 
-        std::vector<MonitorInfo> monitors() const;
+        std::vector<MonitorInfo> getMonitors() const;
+        [[nodiscard]] uint32_t getCurrentMonitor() const;
+        [[nodiscard]] bool getPosition(int& x, int& y) const;
 
         [[nodiscard]] std::span<const Event> events() const;
         [[nodiscard]] bool popEvent(Event& event) const;

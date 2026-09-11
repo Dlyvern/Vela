@@ -31,8 +31,8 @@ namespace vela::graphics
     struct VertexLayout
     {
         uint32_t stride{0};
-        VertexInputRate inputRate{VertexInputRate::Vertex};
         std::vector<VertexAttribute> attributes;
+        VertexInputRate inputRate{VertexInputRate::Vertex};
     };
 } //namespace vela::graphics
 

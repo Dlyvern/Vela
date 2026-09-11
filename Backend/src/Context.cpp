@@ -51,6 +51,11 @@ namespace vela::core
         return m_contextImpl->getSwapchainInfo();
     }
 
+    uint32_t Context::getValidationMessageCount() const
+    {
+        return m_contextImpl->getValidationMessageCount();
+    }
+
     Status Context::attach(Window& window)
     {
         try

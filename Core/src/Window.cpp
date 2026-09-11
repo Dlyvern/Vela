@@ -1,5 +1,7 @@
 #include "Vela/Core/Window.hpp"
 
+#include <algorithm>
+
 namespace vela::core
 {
     Window::Window(IWindowBackend& windowBackend, const WindowPreferences& windowPreferences)
@@ -157,8 +159,60 @@ namespace vela::core
         m_windowBackend->getFramebufferSize(m_nativeWindow, width, height);
     }
 
+    bool Window::getPosition(int& x, int& y) const
+    {
+        return m_windowBackend->getWindowPosition(m_nativeWindow, x, y);
+    }
+
+    uint32_t Window::getCurrentMonitor() const
+    {
+        const std::vector<MonitorInfo> monitors = getMonitors();
+
+        if (monitors.empty())
+            return 0;
+
+        int windowX = 0;
+        int windowY = 0;
+
+        if (!getPosition(windowX, windowY))
+            return 0;
+
+        int windowWidth = 0;
+        int windowHeight = 0;
+
+        getSize(windowWidth, windowHeight);
+
+        uint32_t bestMonitor = 0;
+        long bestOverlap = -1;
+
+        for (size_t index = 0; index < monitors.size(); ++index)
+        {
+            const MonitorInfo& monitor = monitors[index];
+
+            const int overlapWidth = std::min(windowX + windowWidth, monitor.x + monitor.width)
+                                   - std::max(windowX, monitor.x);
+
+            const int overlapHeight = std::min(windowY + windowHeight, monitor.y + monitor.height)
+                                    - std::max(windowY, monitor.y);
+
+            const long overlap = static_cast<long>(std::max(0, overlapWidth))
+                               * static_cast<long>(std::max(0, overlapHeight));
+
+            if (overlap > bestOverlap)
+            {
+                bestOverlap = overlap;
+                bestMonitor = static_cast<uint32_t>(index);
+            }
+        }
+
+        return bestMonitor;
+    }
+
     void Window::setMode(WindowMode mode, uint32_t monitorIndex)
     {
+        if (monitorIndex == k_currentMonitor)
+            monitorIndex = getCurrentMonitor();
+
         m_windowBackend->setMode(m_nativeWindow, mode, monitorIndex);
         m_mode = mode;
     }
@@ -168,9 +222,9 @@ namespace vela::core
         return m_mode;
     }
 
-    std::vector<MonitorInfo> Window::monitors() const
+    std::vector<MonitorInfo> Window::getMonitors() const
     {
-        return m_windowBackend->monitors();
+        return m_windowBackend->getMonitors();
     }
 
     IWindowBackend& Window::getWindowBackend()

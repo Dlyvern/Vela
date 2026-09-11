@@ -28,9 +28,12 @@ namespace vela::backend
 
         VkBufferCreateInfo bufferCI{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
 
-        bufferCI.usage = m_usage == Usage::Index
-            ? VK_BUFFER_USAGE_INDEX_BUFFER_BIT
-            : VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        switch (m_usage)
+        {
+            case Usage::Index:   bufferCI.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT; break;
+            case Usage::Vertex:  bufferCI.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT; break;
+            case Usage::Storage: bufferCI.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; break;
+        }
 
         bufferCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         bufferCI.size = newSize;

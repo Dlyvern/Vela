@@ -8,6 +8,9 @@
 
 #include "Pipeline.hpp"
 #include "DescriptorPool.hpp"
+#include "SpirvReflect.hpp"
+
+#include <unordered_map>
 
 namespace vela::core
 {
@@ -33,6 +36,7 @@ namespace vela::backend
         VkShaderStageFlags getPushConstantStages() const;
 
         Status setTexture(uint32_t slot, VkImageView imageView, VkSampler sampler);
+        Status setStorageBuffer(uint32_t slot, VkBuffer buffer, VkDeviceSize size);
 
         const graphics::MaterialDescription& getMaterialDescription() const;
     private:
@@ -49,6 +53,9 @@ namespace vela::backend
         VkDescriptorSetLayout m_descriptorSetLayout{VK_NULL_HANDLE};
         VkPipelineLayout m_pipelineLayout{VK_NULL_HANDLE};
         VkDevice m_device{VK_NULL_HANDLE};
+        std::unordered_map<uint32_t, DescriptorKind> m_bindingKinds;
+        std::unordered_map<uint32_t, VkBuffer> m_boundStorageBuffers;
+
         uint32_t m_textureCount{0};
         uint32_t m_pushConstantSize{0};
         VkShaderStageFlags m_pushConstantStages{0};

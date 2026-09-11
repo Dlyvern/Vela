@@ -35,7 +35,7 @@ your own on top of its output.
 #include <Vela/Graphics/RenderScene.hpp>
 #include <Vela/Builtins/ForwardGraph.hpp>
 #include <Vela/Builtins/Shapes.hpp>
-#include <Vela/Scene/Camera.hpp>
+#include <Vela/Math/Math.hpp>
 
 auto window = vela::core::Window::create({.title = "Cube", .width = 800, .height = 600});
 if (!window) return 1;
@@ -53,9 +53,13 @@ if (!graph) return 1;
 const auto cubeData = vela::builtins::shapes3d::cube();
 auto cube = vela::graphics::Mesh::create(context.value(), cubeData.vertices, cubeData.indices);
 
-vela::scene::Camera camera;
-camera.setAspect(800.0f / 600.0f);
-camera.setPosition({0.0f, 0.0f, 3.0f});
+const vela::math::Mat4 view = vela::math::lookAt(
+    vela::math::Vector3f(0.0f, 1.0f, 3.0f),
+    vela::math::Vector3f(0.0f, 0.0f, 0.0f),
+    vela::math::Vector3f(0.0f, 1.0f, 0.0f));
+
+vela::math::Mat4 projection = vela::math::perspective(vela::math::radians(60.0f), 800.0f / 600.0f, 0.1f, 100.0f);
+projection[1][1] *= -1.0f;
 
 while (window.value().isOpen())
 {
@@ -64,15 +68,16 @@ while (window.value().isOpen())
     scene.clear();
     scene.add(cube.value(), material, modelMatrix);
 
-    graph.value().setView(camera.getViewMatrix(), camera.getProjectionMatrix());
+    graph.value().setView(view, projection);
 
     if (auto frame = graph.value().execute(); !frame)
         return 1;
 }
 ```
 
-`Examples/SimpleCube` is the complete version - materials, textures, input, gamepad,
-frame stats.
+`Examples/SimpleCube` is the complete version - materials, textures, window events and
+frame stats. `Examples/LittleEngine` is a larger consumer: glTF loading, lighting, ImGui
+and a fly camera.
 
 ## Errors
 

@@ -1,32 +1,32 @@
-#include "Vela/Scene/Camera.hpp"
+#include "LittleEngine/Camera.hpp"
 
 #include <algorithm>
 
 #include "Vela/Math/Math.hpp"
 
-namespace vela::scene
+namespace little
 {
     Camera::Camera()
     {
         updateCameraVectors();
     }
 
-    const math::Vector3f& Camera::getPosition() const
+    const vela::math::Vector3f& Camera::getPosition() const
     {
         return m_position;
     }
 
-    const math::Vector3f& Camera::getForward() const
+    const vela::math::Vector3f& Camera::getForward() const
     {
         return m_forward;
     }
 
-    const math::Vector3f& Camera::getUp() const
+    const vela::math::Vector3f& Camera::getUp() const
     {
         return m_up;
     }
 
-    math::Mat4 Camera::getViewMatrix() const
+    vela::math::Mat4 Camera::getViewMatrix() const
     {
         return vela::math::lookAt(m_position, m_position + m_forward, m_up);
     }
@@ -71,18 +71,18 @@ namespace vela::scene
         return m_orthographicSize;
     }
 
-    math::Mat4 Camera::getProjectionMatrix() const
+    vela::math::Mat4 Camera::getProjectionMatrix() const
     {
-        math::Mat4 proj{1.0f};
+        vela::math::Mat4 proj{1.0f};
 
         if (m_projectionMode == ProjectionMode::Orthographic)
         {
             const float halfHeight = std::max(m_orthographicSize * 0.5f, 0.001f);
             const float halfWidth = std::max(halfHeight * m_aspect, 0.001f);
-            proj = math::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, m_near, m_far);
+            proj = vela::math::ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, m_near, m_far);
         }
         else
-            proj = math::perspective(math::radians(m_fov), m_aspect, m_near, m_far);
+            proj = vela::math::perspective(vela::math::radians(m_fov), m_aspect, m_near, m_far);
 
         proj[1][1] *= -1; //For vulkan shit
 
@@ -97,7 +97,7 @@ namespace vela::scene
 
     void Camera::setFOV(float fov)
     {
-        m_fov = math::clamp(fov, 1.0f, 179.0f);
+        m_fov = vela::math::clamp(fov, 1.0f, 179.0f);
     }
 
     void Camera::setAspect(float aspect)
@@ -127,26 +127,26 @@ namespace vela::scene
         m_orthographicSize = std::max(size, 0.001f);
     }
 
-    void Camera::setPosition(const math::Vector3f &position)
+    void Camera::setPosition(const vela::math::Vector3f &position)
     {
         m_position = position;
     }
 
     void Camera::setPitch(float pitch)
     {
-        m_pitch = math::clamp(pitch, -89.0f, 89.0f);
+        m_pitch = vela::math::clamp(pitch, -89.0f, 89.0f);
         updateCameraVectors();
     }
 
     void Camera::updateCameraVectors()
     {
-        math::Vector3f forward;
-        forward.x = cos(math::radians(m_yaw)) * cos(math::radians(m_pitch));
-        forward.y = sin(math::radians(m_pitch));
-        forward.z = sin(math::radians(m_yaw)) * cos(math::radians(m_pitch));
+        vela::math::Vector3f forward;
+        forward.x = cos(vela::math::radians(m_yaw)) * cos(vela::math::radians(m_pitch));
+        forward.y = sin(vela::math::radians(m_pitch));
+        forward.z = sin(vela::math::radians(m_yaw)) * cos(vela::math::radians(m_pitch));
         
-        m_forward = math::normalize(forward);
-        m_right = math::normalize(math::cross(m_forward, math::Vector3f(0.0f, 1.0f, 0.0f)));
-        m_up = math::normalize(math::cross(m_right, m_forward));
+        m_forward = vela::math::normalize(forward);
+        m_right = vela::math::normalize(vela::math::cross(m_forward, vela::math::Vector3f(0.0f, 1.0f, 0.0f)));
+        m_up = vela::math::normalize(vela::math::cross(m_right, m_forward));
     }
-} //namespace vela::scene
+} //namespace little

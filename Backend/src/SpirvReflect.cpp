@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace
 {
@@ -27,7 +28,12 @@ namespace
     constexpr uint32_t k_opMemberDecorate = 72;
 
     constexpr uint32_t k_decorationOffset = 35;
+    constexpr uint32_t k_decorationBufferBlock = 3;
+
+    constexpr uint32_t k_storageClassUniformConstant = 0;
+    constexpr uint32_t k_storageClassUniform = 2;
     constexpr uint32_t k_storageClassPushConstant = 9;
+    constexpr uint32_t k_storageClassStorageBuffer = 12;
 
     struct Decoration
     {
@@ -90,6 +96,99 @@ namespace
         }
 
         return highest;
+    }
+
+    std::vector<vela::backend::ReflectedBinding> collectBindings(std::span<const uint32_t> code)
+    {
+        std::vector<vela::backend::ReflectedBinding> result;
+
+        if (code.size() < k_headerWords || code[0] != k_spirvMagic)
+            return result;
+
+        std::unordered_map<uint32_t, Decoration> decorations;
+        std::unordered_map<uint32_t, uint32_t> variableStorageClasses;
+        std::unordered_map<uint32_t, uint32_t> pointerPointees;
+        std::unordered_map<uint32_t, uint32_t> variableTypes;
+        std::unordered_set<uint32_t> bufferBlockTypes;
+
+        size_t offset = k_headerWords;
+
+        while (offset < code.size())
+        {
+            const uint32_t instruction = code[offset];
+            const uint32_t wordCount = instruction >> 16;
+            const uint32_t opcode = instruction & 0xFFFFu;
+
+            if (wordCount == 0 || offset + wordCount > code.size())
+                break;
+
+            if (opcode == k_opDecorate && wordCount >= 4)
+            {
+                const uint32_t target = code[offset + 1];
+                const uint32_t decoration = code[offset + 2];
+                const uint32_t operand = code[offset + 3];
+
+                if (decoration == k_decorationDescriptorSet)
+                {
+                    decorations[target].hasSet = true;
+                    decorations[target].set = operand;
+                }
+                else if (decoration == k_decorationBinding)
+                {
+                    decorations[target].hasBinding = true;
+                    decorations[target].binding = operand;
+                }
+            }
+            else if (opcode == k_opDecorate && wordCount >= 3 && code[offset + 2] == k_decorationBufferBlock)
+                bufferBlockTypes.insert(code[offset + 1]);
+            else if (opcode == k_opTypePointer && wordCount >= 4)
+                pointerPointees[code[offset + 1]] = code[offset + 3];
+            else if (opcode == k_opVariable && wordCount >= 4)
+            {
+                variableTypes[code[offset + 2]] = code[offset + 1];
+                variableStorageClasses[code[offset + 2]] = code[offset + 3];
+            }
+
+            offset += wordCount;
+        }
+
+        for (const auto& [target, decoration] : decorations)
+        {
+            if (!decoration.hasSet || !decoration.hasBinding)
+                continue;
+
+            const auto storageClass = variableStorageClasses.find(target);
+
+            if (storageClass == variableStorageClasses.end())
+                continue;
+
+            vela::backend::ReflectedBinding reflected{};
+            reflected.set = decoration.set;
+            reflected.binding = decoration.binding;
+
+            if (storageClass->second == k_storageClassStorageBuffer)
+                reflected.kind = vela::backend::DescriptorKind::StorageBuffer;
+            else if (storageClass->second == k_storageClassUniform)
+            {
+                uint32_t pointee = 0;
+
+                if (const auto type = variableTypes.find(target); type != variableTypes.end())
+                    if (const auto pointer = pointerPointees.find(type->second); pointer != pointerPointees.end())
+                        pointee = pointer->second;
+
+                reflected.kind = bufferBlockTypes.contains(pointee)
+                    ? vela::backend::DescriptorKind::StorageBuffer
+                    : vela::backend::DescriptorKind::UniformBuffer;
+            }
+            else if (storageClass->second == k_storageClassUniformConstant)
+                reflected.kind = vela::backend::DescriptorKind::CombinedImageSampler;
+            else
+                continue;
+
+            result.push_back(reflected);
+        }
+
+        return result;
     }
 
     uint32_t pushConstantBlockSize(std::span<const uint32_t> code)
@@ -223,5 +322,10 @@ namespace vela::backend
     uint32_t reflectPushConstantSize(std::span<const uint32_t> shader)
     {
         return pushConstantBlockSize(shader);
+    }
+
+    std::vector<ReflectedBinding> reflectBindings(std::span<const uint32_t> shader)
+    {
+        return collectBindings(shader);
     }
 } //namespace vela::backend

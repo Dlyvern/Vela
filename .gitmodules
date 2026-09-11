@@ -13,3 +13,6 @@
 [submodule "Examples/vendor/imgui"]
 	path = Examples/vendor/imgui
 	url = https://github.com/ocornut/imgui.git
+[submodule "Examples/vendor/cgltf"]
+	path = Examples/vendor/cgltf
+	url = https://github.com/jkuhlmann/cgltf

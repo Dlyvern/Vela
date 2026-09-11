@@ -212,6 +212,8 @@ namespace vela::backend
             hash = hashValue(attribute.offset, hash);
         }
 
+        hash = hashValue(description.vertexLayout.inputRate, hash);
+
         hash = hashValue(description.layout, hash);
         hash = hashValue(description.cullMode, hash);
         hash = hashValue(description.frontFace, hash);
@@ -243,13 +245,19 @@ namespace vela::backend
 
         VkPipelineShaderStageCreateInfo shaderStageCI[] = { vertStageCI, fragStageCI };
 
-        if (description.vertexLayout.stride == 0 || description.vertexLayout.attributes.empty())
-            throw std::runtime_error("Material requires a vertex layout");
+        const bool hasVertexInput = description.vertexLayout.stride > 0
+            && !description.vertexLayout.attributes.empty();
 
         VkVertexInputBindingDescription binding{};
         binding.binding = 0;
         binding.stride = description.vertexLayout.stride;
-        binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        if(description.vertexLayout.inputRate == graphics::VertexInputRate::Vertex)
+            binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        else if(description.vertexLayout.inputRate == graphics::VertexInputRate::Instance)
+            binding.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+        else
+            throw std::runtime_error("Unknown input rate");
 
         std::vector<VkVertexInputAttributeDescription> posAttr;
         posAttr.reserve(description.vertexLayout.attributes.size());
@@ -266,10 +274,10 @@ namespace vela::backend
         }
 
         VkPipelineVertexInputStateCreateInfo vertexInput{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-        vertexInput.vertexBindingDescriptionCount = 1;
-        vertexInput.pVertexBindingDescriptions = &binding;
-        vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(posAttr.size());
-        vertexInput.pVertexAttributeDescriptions = posAttr.data();
+        vertexInput.vertexBindingDescriptionCount = hasVertexInput ? 1 : 0;
+        vertexInput.pVertexBindingDescriptions = hasVertexInput ? &binding : nullptr;
+        vertexInput.vertexAttributeDescriptionCount = hasVertexInput ? static_cast<uint32_t>(posAttr.size()) : 0;
+        vertexInput.pVertexAttributeDescriptions = hasVertexInput ? posAttr.data() : nullptr;
 
         VkPipelineInputAssemblyStateCreateInfo inputAssemblyCI{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
         inputAssemblyCI.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;

@@ -31,6 +31,11 @@ namespace vela::graphics
         return m_impl->addPass(name, std::move(pass));
     }
 
+    Status RenderGraph::addComputePass(const std::string& name, std::unique_ptr<ComputePass> pass)
+    {
+        return m_impl->addComputePass(name, std::move(pass));
+    }
+
     FrameStats RenderGraph::getFrameStats() const
     {
         return m_impl->getFrameStats();

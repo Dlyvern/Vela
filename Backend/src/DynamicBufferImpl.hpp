@@ -17,10 +17,11 @@ namespace vela::backend
     class DynamicBufferImpl
     {
     public:
-        enum class Usage : uint8_t 
+        enum class Usage : uint8_t
         {
             Vertex,
-            Index
+            Index,
+            Storage
         };
 
         DynamicBufferImpl(core::Context& ctx, Usage usage, size_t initialBytes, VkIndexType indexType = VK_INDEX_TYPE_UINT32);

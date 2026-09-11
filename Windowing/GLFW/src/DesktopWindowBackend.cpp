@@ -658,7 +658,20 @@ namespace vela::windowing
         glfwSetWindowShouldClose(glfwWindow, GLFW_TRUE);
     }
 
-    std::vector<core::MonitorInfo> DesktopWindowBackend::monitors() const
+    bool DesktopWindowBackend::getWindowPosition(void* nativeWindow, int& x, int& y) const
+    {
+        x = 0;
+        y = 0;
+
+        if (!windowPositionSupported())
+            return false;
+
+        glfwGetWindowPos(static_cast<GLFWwindow*>(nativeWindow), &x, &y);
+
+        return true;
+    }
+
+    std::vector<core::MonitorInfo> DesktopWindowBackend::getMonitors() const
     {
         int count{0};
         GLFWmonitor** monitors = glfwGetMonitors(&count);
@@ -795,6 +808,7 @@ namespace vela::windowing
                     break;
                 case GLFW_RELEASE:
                     event.type = core::EventType::KeyReleased;
+                    break;
                 case GLFW_REPEAT:
                     event.type = core::EventType::KeyPressed;
                     break;

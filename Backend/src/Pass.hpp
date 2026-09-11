@@ -51,11 +51,38 @@ namespace vela::backend
         InputUsage usage{InputUsage::Sampled};
     };
 
+    struct BufferOutput
+    {
+        std::string name;
+        VkDeviceSize size{0};
+    };
+
+    enum class BufferAccess : uint8_t { Read = 0, ReadWrite };
+
+    struct BufferInput
+    {
+        std::string name;
+        BufferAccess access{BufferAccess::Read};
+    };
+
+    struct GraphBuffer
+    {
+        VkBuffer buffer{VK_NULL_HANDLE};
+        VmaAllocation allocation{VK_NULL_HANDLE};
+        VkDeviceSize size{0};
+        VkPipelineStageFlags2 lastStage{VK_PIPELINE_STAGE_2_NONE};
+        VkAccessFlags2 lastAccess{VK_ACCESS_2_NONE};
+    };
+
+    enum class PassKind : uint8_t { Graphics = 0, Compute };
+
     struct PassDeclaration
     {
         std::vector<AttachmentOutput> colorOutputs;
         std::optional<AttachmentOutput> depthOutput;
         std::vector<PassInput> inputs;
+        std::vector<BufferOutput> bufferOutputs;
+        std::vector<BufferInput> bufferInputs;
     };
 
     struct PassFormats
@@ -83,6 +110,7 @@ namespace vela::backend
     public:
         virtual PassDeclaration declare() const = 0;
         virtual void record(const PassContext& passContext) = 0;
+        virtual PassKind kind() const { return PassKind::Graphics; }
         virtual ~Pass() = default;
     };
 } //namespace vela::backend

@@ -48,6 +48,8 @@ namespace vela::core
 
         std::vector<Feature> requiredFeatures;
         std::vector<Feature> optionalFeatures;
+
+        bool syncValidation{false};
     };
 } //namespace vela::core
 

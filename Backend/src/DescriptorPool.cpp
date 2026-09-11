@@ -11,10 +11,11 @@ namespace vela::backend
 
     VkDescriptorPool DescriptorPool::createPool()
     {
-        const std::array<VkDescriptorPoolSize, 2> poolSizes
+        const std::array<VkDescriptorPoolSize, 3> poolSizes
         {
             VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, k_setsPerPool * 8},
-            VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, k_setsPerPool}
+            VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, k_setsPerPool},
+            VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, k_setsPerPool * 4}
         };
 
         VkDescriptorPoolCreateInfo descriptorPoolCI{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};

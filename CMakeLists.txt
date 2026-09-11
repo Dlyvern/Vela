@@ -28,7 +28,6 @@ add_subdirectory(Math)
 add_subdirectory(Backend)
 add_subdirectory(Graphics)
 add_subdirectory(Core)
-add_subdirectory(Scene)
 add_subdirectory(Windowing)
 
 if(VELA_WITH_BUILTINS)
@@ -42,7 +41,7 @@ endif()
 add_library(Vela INTERFACE)
 add_library(Vela::Vela ALIAS Vela)
 
-target_link_libraries(Vela INTERFACE VelaGraphics VelaCore VelaScene VelaMath VelaFoundation)
+target_link_libraries(Vela INTERFACE VelaGraphics VelaCore VelaMath VelaFoundation)
 
 if(VELA_WITH_GLFW)
     target_link_libraries(Vela INTERFACE VelaGLFW)

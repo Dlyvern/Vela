@@ -29,6 +29,7 @@ namespace vela::graphics
     {
         float position[3];
         float uv[2];
+        float normal[3];
 
         static VertexLayout layout()
         {
@@ -37,7 +38,8 @@ namespace vela::graphics
                 sizeof(StaticVertex),
                 {
                     {0, VertexAttributeFormat::Float3, offsetof(StaticVertex, position)},
-                    {1, VertexAttributeFormat::Float2, offsetof(StaticVertex, uv)}
+                    {1, VertexAttributeFormat::Float2, offsetof(StaticVertex, uv)},
+                    {2, VertexAttributeFormat::Float3, offsetof(StaticVertex, normal)}
                 }
             };
         }
@@ -47,6 +49,7 @@ namespace vela::graphics
     {
         float position[3];
         float uv[2];
+        float normal[3];
 
         static VertexLayout layout()
         {
@@ -55,7 +58,8 @@ namespace vela::graphics
                 sizeof(SkinnedVertex),
                 {
                     {0, VertexAttributeFormat::Float3, offsetof(SkinnedVertex, position)},
-                    {1, VertexAttributeFormat::Float2, offsetof(SkinnedVertex, uv)}
+                    {1, VertexAttributeFormat::Float2, offsetof(SkinnedVertex, uv)},
+                    {2, VertexAttributeFormat::Float3, offsetof(SkinnedVertex, normal)}
                 }
             };
         }

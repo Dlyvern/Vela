@@ -55,6 +55,23 @@ namespace vela::graphics
         m_graph->bindIndexBuffer(buffer);
     }
 
+    void PassRecorder::drawInstanced(uint32_t vertexCount, uint32_t instanceCount,
+        uint32_t firstVertex, uint32_t firstInstance)
+    {
+        if (!m_graph)
+            return;
+
+        m_graph->drawInstanced(vertexCount, instanceCount, firstVertex, firstInstance);
+    }
+
+    void PassRecorder::bindStorageBuffer(uint32_t slot, const std::string& bufferName)
+    {
+        if (!m_graph)
+            return;
+
+        m_graph->bindMaterialStorageBuffer(slot, bufferName);
+    }
+
     void PassRecorder::setConstants(const math::Mat4& value)
     {
         if (!m_graph)
@@ -110,6 +127,17 @@ namespace vela::backend
 
         for (const graphics::PassInput& input : description.inputs)
             declaration.inputs.push_back(PassInput{input.name, toBackendInputUsage(input.usage)});
+
+        declaration.bufferOutputs.reserve(description.bufferOutputs.size());
+
+        for (const graphics::BufferSlot& slot : description.bufferOutputs)
+            declaration.bufferOutputs.push_back(BufferOutput{slot.name, slot.size});
+
+        declaration.bufferInputs.reserve(description.bufferInputs.size());
+
+        for (const graphics::BufferInput& input : description.bufferInputs)
+            declaration.bufferInputs.push_back(BufferInput{input.name,
+                input.access == graphics::BufferAccess::ReadWrite ? BufferAccess::ReadWrite : BufferAccess::Read});
 
         return declaration;
     }

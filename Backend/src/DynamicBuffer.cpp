@@ -49,6 +49,10 @@ namespace vela::graphics
             case Usage::Vertex:
                 us = backend::DynamicBufferImpl::Usage::Vertex;
                 break;
+
+            case Usage::Storage:
+                us = backend::DynamicBufferImpl::Usage::Storage;
+                break;
         }
 
         VkIndexType vkIndexType;

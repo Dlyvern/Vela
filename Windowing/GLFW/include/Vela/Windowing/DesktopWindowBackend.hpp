@@ -27,7 +27,8 @@ namespace vela::windowing
         void waitEvents() override;
         void close(void* nativeWindow) override;
         void setMode(void* nativeWindow, core::WindowMode mode, uint32_t monitorIndex) override;
-        std::vector<core::MonitorInfo> monitors() const override;
+        std::vector<core::MonitorInfo> getMonitors() const override;
+        bool getWindowPosition(void* nativeWindow, int& x, int& y) const override;
 
         std::span<const core::Event> events(void* nativeWindow) const override;
         bool isKeyDown(void* nativeWindow, core::Key key) const override;

@@ -6,7 +6,11 @@
 #include "Vela/Graphics/Mesh.hpp"
 #include "Vela/Graphics/DynamicBuffer.hpp"
 
+#include "Vela/Graphics/ComputeProgram.hpp"
+
 #include "PassAdapter.hpp"
+#include "ComputePassAdapter.hpp"
+#include "ComputeProgramImpl.hpp"
 #include "DynamicBufferImpl.hpp"
 
 #include "MeshImpl.hpp"
@@ -144,6 +148,209 @@ namespace vela::backend
         return {};
     }
 
+    Status RenderGraphImpl::addComputePass(const std::string& name, std::unique_ptr<graphics::ComputePass> pass)
+    {
+        if (pass == nullptr)
+            return Error{ErrorCode::InvalidArgument, "Compute pass must not be null"};
+
+        if (m_renderGraphPassIndices.contains(name))
+            return Error{ErrorCode::InvalidArgument, "Render graph pass already exists: " + name};
+
+        addRenderGraphPass(name, std::make_unique<ComputePassAdapter>(std::move(pass), *this));
+
+        return {};
+    }
+
+    void RenderGraphImpl::bindComputeProgram(const graphics::ComputeProgram& program)
+    {
+        if(!m_isFrameValid || !m_currentRenderGraphPass)
+            return;
+
+        const ComputeProgramImpl* programImpl = program.impl();
+
+        vkCmdBindPipeline(m_currentCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, programImpl->getPipeline());
+
+        m_boundComputeProgram = &program;
+        m_boundPipelineLayout = programImpl->getPipelineLayout();
+        m_boundPushConstantSize = programImpl->getPushConstantSize();
+        m_boundPushConstantStages = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+
+    void RenderGraphImpl::bindStorageBuffer(const graphics::ComputeProgram& program, uint32_t slot,
+        const std::string& bufferName)
+    {
+        if(!m_isFrameValid || !m_currentRenderGraphPass)
+            return;
+
+        const auto bufferIt = m_buffers.find(bufferName);
+
+        if (bufferIt == m_buffers.end())
+        {
+            std::cerr << "Compute pass referenced unknown buffer " << bufferName << '\n';
+            return;
+        }
+
+        if (auto bound = program.impl()->setStorageBuffer(slot, bufferIt->second.buffer, bufferIt->second.size); !bound)
+        {
+            std::cerr << bound.error().message << '\n';
+            return;
+        }
+
+        VkDescriptorSet descriptorSet = program.impl()->getDescriptorSet();
+
+        if (descriptorSet == VK_NULL_HANDLE)
+            return;
+
+        vkCmdBindDescriptorSets(m_currentCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+            program.impl()->getPipelineLayout(), 0, 1, &descriptorSet, 0, nullptr);
+    }
+
+    void RenderGraphImpl::drawInstanced(uint32_t vertexCount, uint32_t instanceCount,
+        uint32_t firstVertex, uint32_t firstInstance)
+    {
+        if(!m_isFrameValid || !m_currentRenderGraphPass)
+            return;
+
+        vkCmdDraw(m_currentCommandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
+    }
+
+    void RenderGraphImpl::bindMaterialStorageBuffer(uint32_t slot, const std::string& bufferName)
+    {
+        if(!m_isFrameValid || !m_currentRenderGraphPass || m_boundMaterial == nullptr)
+            return;
+
+        const auto bufferIt = m_buffers.find(bufferName);
+
+        if (bufferIt == m_buffers.end())
+        {
+            std::cerr << "Pass referenced unknown buffer " << bufferName << '\n';
+            return;
+        }
+
+        if (auto bound = m_boundMaterial->setStorageBuffer(slot, bufferIt->second.buffer, bufferIt->second.size); !bound)
+            std::cerr << bound.error().message << '\n';
+    }
+
+    void RenderGraphImpl::setComputeConstants(const math::Mat4& value)
+    {
+        if(!m_isFrameValid || !m_currentRenderGraphPass)
+            return;
+
+        pushConstants(&value, sizeof(math::Mat4));
+    }
+
+    void RenderGraphImpl::dispatch(uint32_t groupsX, uint32_t groupsY, uint32_t groupsZ)
+    {
+        if(!m_isFrameValid || !m_currentRenderGraphPass || m_boundComputeProgram == nullptr)
+            return;
+
+        vkCmdDispatch(m_currentCommandBuffer, groupsX, groupsY, groupsZ);
+    }
+
+    void RenderGraphImpl::allocateGraphBuffers()
+    {
+        std::unordered_map<std::string, VkDeviceSize> sizes;
+
+        for (const auto& registered : m_renderGraphPasses)
+            for (const BufferOutput& output : registered.declaration.bufferOutputs)
+                sizes[output.name] = std::max(sizes[output.name], output.size);
+
+        for (const auto& [name, size] : sizes)
+        {
+            if (m_buffers.contains(name) || size == 0)
+                continue;
+
+            VkBufferCreateInfo bufferCI{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+            bufferCI.size = size;
+            bufferCI.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+            bufferCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+            VmaAllocationCreateInfo allocationCI{};
+            allocationCI.usage = VMA_MEMORY_USAGE_AUTO;
+
+            GraphBuffer graphBuffer{};
+            graphBuffer.size = size;
+
+            if (vmaCreateBuffer(m_context.impl()->getAllocator(), &bufferCI, &allocationCI,
+                    &graphBuffer.buffer, &graphBuffer.allocation, nullptr) != VK_SUCCESS)
+            {
+                std::cerr << "Failed to allocate graph buffer " << name << '\n';
+                continue;
+            }
+
+            m_buffers[name] = graphBuffer;
+        }
+    }
+
+    void RenderGraphImpl::transitionGraphBuffers(const PassDeclaration& declaration, PassKind kind)
+    {
+        std::vector<VkBufferMemoryBarrier2> bufferBarriers;
+
+        auto transition = [&](const std::string& name, VkPipelineStageFlags2 stage, VkAccessFlags2 access)
+        {
+            const auto bufferIt = m_buffers.find(name);
+
+            if (bufferIt == m_buffers.end())
+                return;
+
+            GraphBuffer& graphBuffer = bufferIt->second;
+
+            if (graphBuffer.lastStage == stage && graphBuffer.lastAccess == access)
+                return;
+
+            if (graphBuffer.lastStage != VK_PIPELINE_STAGE_2_NONE)
+            {
+                VkBufferMemoryBarrier2 bufferBarrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+                bufferBarrier.srcStageMask = graphBuffer.lastStage;
+                bufferBarrier.srcAccessMask = graphBuffer.lastAccess;
+                bufferBarrier.dstStageMask = stage;
+                bufferBarrier.dstAccessMask = access;
+                bufferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                bufferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                bufferBarrier.buffer = graphBuffer.buffer;
+                bufferBarrier.offset = 0;
+                bufferBarrier.size = VK_WHOLE_SIZE;
+
+                bufferBarriers.push_back(bufferBarrier);
+            }
+
+            graphBuffer.lastStage = stage;
+            graphBuffer.lastAccess = access;
+        };
+
+        const VkPipelineStageFlags2 stage = kind == PassKind::Compute
+            ? VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+            : VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT;
+
+        for (const BufferOutput& bufferOutput : declaration.bufferOutputs)
+            transition(bufferOutput.name, stage, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
+
+        for (const BufferInput& bufferInput : declaration.bufferInputs)
+            transition(bufferInput.name, stage, bufferInput.access == BufferAccess::ReadWrite
+                ? VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT | VK_ACCESS_2_SHADER_STORAGE_READ_BIT
+                : VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
+
+        if (bufferBarriers.empty())
+            return;
+
+        VkDependencyInfo dependencyInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        dependencyInfo.bufferMemoryBarrierCount = static_cast<uint32_t>(bufferBarriers.size());
+        dependencyInfo.pBufferMemoryBarriers = bufferBarriers.data();
+
+        vkCmdPipelineBarrier2(m_currentCommandBuffer, &dependencyInfo);
+    }
+
+    void RenderGraphImpl::destroyAllGraphBuffers()
+    {
+        DeletionQueue& deletionQueue = m_context.impl()->getDeletionQueue();
+
+        for (auto& [name, graphBuffer] : m_buffers)
+            if (graphBuffer.buffer != VK_NULL_HANDLE)
+                deletionQueue.push({.buffer = graphBuffer.buffer, .allocation = graphBuffer.allocation});
+
+        m_buffers.clear();
+    }
+
     void RenderGraphImpl::buildRenderGraphOrder()
     {
         const size_t passCount = m_renderGraphPasses.size();
@@ -161,29 +368,40 @@ namespace vela::backend
 
             if (declaration.depthOutput.has_value())
                 m_attachmentProducers[declaration.depthOutput->name].push_back(index);
+
+            for (const BufferOutput& bufferOutput : declaration.bufferOutputs)
+                m_attachmentProducers[bufferOutput.name].push_back(index);
         }
 
         std::vector<std::vector<size_t>> successors(passCount);
         std::vector<size_t> inDegree(passCount, 0);
 
-        for (size_t consumer = 0; consumer < passCount; ++consumer)
+        auto addEdges = [&](size_t consumer, const std::string& resourceName)
         {
-            for (const PassInput& input : m_renderGraphPasses[consumer].declaration.inputs)
-            {
-                const auto producersIt = m_attachmentProducers.find(input.name);
+            const auto producersIt = m_attachmentProducers.find(resourceName);
 
-                if (producersIt == m_attachmentProducers.end())
+            if (producersIt == m_attachmentProducers.end())
+                return;
+
+            for (size_t producer : producersIt->second)
+            {
+                if (producer == consumer)
                     continue;
 
-                for (size_t producer : producersIt->second)
-                {
-                    if (producer == consumer)
-                        continue;
-
-                    successors[producer].push_back(consumer);
-                    ++inDegree[consumer];
-                }
+                successors[producer].push_back(consumer);
+                ++inDegree[consumer];
             }
+        };
+
+        for (size_t consumer = 0; consumer < passCount; ++consumer)
+        {
+            const PassDeclaration& declaration = m_renderGraphPasses[consumer].declaration;
+
+            for (const PassInput& input : declaration.inputs)
+                addEdges(consumer, input.name);
+
+            for (const BufferInput& bufferInput : declaration.bufferInputs)
+                addEdges(consumer, bufferInput.name);
         }
 
         std::vector<bool> emitted(passCount, false);
@@ -646,6 +864,7 @@ namespace vela::backend
         {
             destroyAllAttachments();
             allocateAllRenderGraphPassOutputs();
+            allocateGraphBuffers();
             buildRenderGraphOrder();
             m_isRenderGraphDirty = false;
         }
@@ -742,8 +961,28 @@ namespace vela::backend
         m_boundPipelineLayout = VK_NULL_HANDLE;
         m_boundVertexBuffer = VK_NULL_HANDLE;
         m_boundIndexBuffer = VK_NULL_HANDLE;
+        m_boundComputeProgram = nullptr;
+
+        if (registered.pass->kind() == PassKind::Compute)
+        {
+            m_currentPassOpenedRendering = false;
+
+            transitionGraphBuffers(registered.declaration, PassKind::Compute);
+
+            PassContext computeContext(m_attachments);
+            computeContext.commandBuffer = m_currentCommandBuffer;
+
+            registered.pass->record(computeContext);
+
+            m_currentRenderGraphPass = nullptr;
+
+            return;
+        }
 
         const PassDeclaration& passDeclaration = m_currentRenderGraphPass->declaration;
+
+        transitionGraphBuffers(passDeclaration, PassKind::Graphics);
+
         const VkExtent2D extent = passExtent(passDeclaration);
 
         std::vector<VkRenderingAttachmentInfo> colorRenderingAttachmentInfos;
@@ -938,7 +1177,7 @@ namespace vela::backend
 
     void RenderGraphImpl::bindMaterial(const graphics::Material& material)
     {
-        const MaterialImpl* materialImpl = material.impl();
+        MaterialImpl* materialImpl = material.impl();
 
         if(materialImpl == m_boundMaterial)
             return;
@@ -1111,6 +1350,7 @@ namespace vela::backend
         vkDestroyQueryPool(m_device, m_queryPool, nullptr);
 
         destroyAllAttachments();
+        destroyAllGraphBuffers();
     }
 
 } //namespace vela::backend

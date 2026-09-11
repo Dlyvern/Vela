@@ -22,10 +22,11 @@ namespace vela::graphics
     class DynamicBuffer
     {
     public:
-        enum class Usage : uint8_t 
+        enum class Usage : uint8_t
         {
             Vertex,
-            Index
+            Index,
+            Storage
         };
 
         enum class IndexType

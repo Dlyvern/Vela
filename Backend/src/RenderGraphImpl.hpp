@@ -10,6 +10,7 @@
 
 #include "Vela/Result.hpp"
 #include "Vela/Math/Matrix.hpp"
+#include "Vela/Math/Vector.hpp"
 #include "Vela/Graphics/Pass.hpp"
 #include "Vela/Graphics/FrameStats.hpp"
 
@@ -46,6 +47,13 @@ namespace vela::backend
         Status execute();
 
         void draw(const graphics::Mesh& mesh, const graphics::Material& material, const math::Mat4& model);
+        void bind(const graphics::Material& material);
+        void bindVertexBuffer(const graphics::DynamicBuffer& buffer);
+        void bindIndexBuffer(const graphics::DynamicBuffer& buffer);
+        void setConstants(const math::Mat4& value);
+        void drawIndexed(uint32_t indexCount, uint32_t firstIndex, int32_t vertexOffset,
+                 uint32_t instanceCount = 1, uint32_t firstInstance = 0);
+        void setScissor(int32_t x, int32_t y, uint32_t width, uint32_t height);
 
         void setPresentSource(std::string attachmentName);
 
@@ -54,6 +62,11 @@ namespace vela::backend
         void setView(const math::Mat4& view, const math::Mat4& projection);
         
         graphics::FrameStats getFrameStats() const;
+
+        static constexpr uint32_t getFramesInFlight()
+        {
+            return k_framesInFlight;
+        }
 
         ~RenderGraphImpl();
     private:
@@ -83,6 +96,11 @@ namespace vela::backend
         const MaterialImpl* m_boundMaterial{nullptr};
         VkPipeline m_boundPipeline{VK_NULL_HANDLE};
         VkPipelineLayout m_boundPipelineLayout{VK_NULL_HANDLE};
+        uint32_t m_boundPushConstantSize{0};
+        VkShaderStageFlags m_boundPushConstantStages{0};
+
+        void bindMaterial(const graphics::Material& material);
+        void pushConstants(const void* data, uint32_t size);
         VkBuffer m_boundVertexBuffer{VK_NULL_HANDLE};
         VkBuffer m_boundIndexBuffer{VK_NULL_HANDLE};
         bool m_currentPassOpenedRendering{false};

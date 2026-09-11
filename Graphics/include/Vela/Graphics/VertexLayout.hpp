@@ -11,7 +11,14 @@ namespace vela::graphics
         Float = 0,
         Float2,
         Float3,
-        Float4
+        Float4,
+        Unorm8x4
+    };
+
+    enum class VertexInputRate : uint8_t 
+    {
+        Vertex = 0,
+        Instance
     };
 
     struct VertexAttribute
@@ -24,6 +31,7 @@ namespace vela::graphics
     struct VertexLayout
     {
         uint32_t stride{0};
+        VertexInputRate inputRate{VertexInputRate::Vertex};
         std::vector<VertexAttribute> attributes;
     };
 } //namespace vela::graphics

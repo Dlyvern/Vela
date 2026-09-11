@@ -38,6 +38,7 @@ namespace vela::core
         virtual bool isMouseButtonDown(void* nativeWindow, MouseButton button) const = 0;
         virtual void getCursorPosition(void* nativeWindow, double& x, double& y) const = 0;
         virtual void setCursorMode(void* nativeWindow, CursorMode mode) = 0;
+        virtual void setCursorShape(void* nativeWindow, CursorShape shape) = 0;
 
         //TODO If a controller isn't detected properly, calling glfwUpdateGamepadMappings can add support for unmapped hardware
         //Gamepad

@@ -1,6 +1,5 @@
 #include "Vela/Graphics/Material.hpp"
 
-#include <stdexcept>
 #include "MaterialImpl.hpp"
 #include "TextureImpl.hpp"
 #include "Vela/Graphics/Texture.hpp"

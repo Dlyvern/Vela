@@ -50,6 +50,8 @@ namespace vela::graphics
 
         [[nodiscard]]FrameStats getFrameStats() const;
 
+        uint32_t getFramesInFlight();
+
     private:
         RenderGraph(core::Context& context);
 

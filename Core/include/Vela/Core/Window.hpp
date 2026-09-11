@@ -46,6 +46,7 @@ namespace vela::core
         void getCursorPosition(double& x, double& y) const;
 
         void setCursorMode(CursorMode mode);
+        void setCursorShape(CursorShape shape);
 
         [[nodiscard]] std::vector<int> getConnectedGamepads() const;
         [[nodiscard]] bool isGamepadConnected(int gamepadId) const;

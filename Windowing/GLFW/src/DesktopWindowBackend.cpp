@@ -385,6 +385,24 @@ namespace
         } 
     }
 
+    int toGLFWCursorShape(vela::core::CursorShape cursorShape)
+    {
+        switch (cursorShape)
+        {
+            case vela::core::CursorShape::Arrow:      return GLFW_ARROW_CURSOR;
+            case vela::core::CursorShape::TextInput:  return GLFW_IBEAM_CURSOR;
+            case vela::core::CursorShape::Hand:       return GLFW_POINTING_HAND_CURSOR;
+            case vela::core::CursorShape::NotAllowed: return GLFW_NOT_ALLOWED_CURSOR;
+            case vela::core::CursorShape::ResizeAll:  return GLFW_RESIZE_ALL_CURSOR;
+            case vela::core::CursorShape::ResizeNS:   return GLFW_RESIZE_NS_CURSOR;
+            case vela::core::CursorShape::ResizeEW:   return GLFW_RESIZE_EW_CURSOR;
+            case vela::core::CursorShape::ResizeNESW: return GLFW_RESIZE_NESW_CURSOR;
+            case vela::core::CursorShape::ResizeNWSE: return GLFW_RESIZE_NWSE_CURSOR;
+        }
+
+        return GLFW_ARROW_CURSOR;
+    }
+
     int toGLFWCursorMode(vela::core::CursorMode cursorMode)
     {
         switch(cursorMode)
@@ -442,6 +460,24 @@ namespace vela::windowing
     {
         auto glfwWindow = static_cast<GLFWwindow*>(nativeWindow);
         glfwSetInputMode(glfwWindow, GLFW_CURSOR, toGLFWCursorMode(mode));
+    }
+
+    void DesktopWindowBackend::setCursorShape(void* nativeWindow, core::CursorShape shape)
+    {
+        auto glfwWindow = static_cast<GLFWwindow*>(nativeWindow);
+
+        auto cursorIt = m_cursors.find(shape);
+
+        if (cursorIt == m_cursors.end())
+            cursorIt = m_cursors.emplace(shape, glfwCreateStandardCursor(toGLFWCursorShape(shape))).first;
+
+        if (cursorIt->second == nullptr)
+        {
+            glfwSetCursor(glfwWindow, nullptr);
+            return;
+        }
+
+        glfwSetCursor(glfwWindow, cursorIt->second);
     }
 
     void DesktopWindowBackend::getFramebufferSize(void* nativeWindow, int& width, int& height)
@@ -746,6 +782,9 @@ namespace vela::windowing
             event.modifiers.control = (mods & GLFW_MOD_CONTROL) != 0;
             event.modifiers.shift = (mods & GLFW_MOD_SHIFT) != 0;
             event.modifiers.alt = (mods & GLFW_MOD_ALT) != 0;
+            event.modifiers.super = (mods & GLFW_MOD_SUPER) != 0;
+            event.modifiers.capsLock = (mods & GLFW_MOD_CAPS_LOCK) != 0;
+            event.modifiers.numLock = (mods & GLFW_MOD_NUM_LOCK) != 0;
 
             event.key = fromGLFWKey(key);
 
@@ -1002,6 +1041,12 @@ namespace vela::windowing
 
     DesktopWindowBackend::~DesktopWindowBackend()
     {
+        for (const auto& [shape, cursor] : m_cursors)
+            if (cursor != nullptr)
+                glfwDestroyCursor(cursor);
+
+        m_cursors.clear();
+
         glfwTerminate();
     }
 } //namespace vela::windowing

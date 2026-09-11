@@ -7,17 +7,32 @@
 
 namespace vela::backend
 {
-    MeshImpl::MeshImpl(core::Context& ctx, std::span<const std::byte> vertexData, uint32_t vertexCount, std::span<const uint32_t> indices)
+    MeshImpl::MeshImpl(core::Context& ctx, std::span<const std::byte> vertexData, uint32_t vertexCount,
+        std::span<const std::byte> indexData, uint32_t indexCount, VkIndexType indexType)
     : m_deletionQueue(&ctx.impl()->getDeletionQueue())
     {
-        for (uint32_t index : indices)
+        for (uint32_t element = 0; element < indexCount; ++element)
+        {
+            uint32_t index = 0;
+
+            if (indexType == VK_INDEX_TYPE_UINT16)
+            {
+                uint16_t narrow = 0;
+                std::memcpy(&narrow, indexData.data() + element * sizeof(uint16_t), sizeof(uint16_t));
+                index = narrow;
+            }
+            else
+                std::memcpy(&index, indexData.data() + element * sizeof(uint32_t), sizeof(uint32_t));
+
             if (index >= vertexCount)
                 throw std::runtime_error("Mesh index " + std::to_string(index)
                     + " is out of range for " + std::to_string(vertexCount) + " vertices");
+        }
 
         m_allocator = ctx.impl()->getAllocator();
         m_vertexCount = vertexCount;
-        m_indexCount = static_cast<uint32_t>(indices.size());
+        m_indexCount = indexCount;
+        m_indexType = indexType;
 
         VkBufferCreateInfo vertexBufferCI{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
         vertexBufferCI.size = vertexData.size();
@@ -37,9 +52,9 @@ namespace vela::backend
         std::memcpy(vertexBufferInfo.pMappedData, vertexData.data(), vertexData.size());
         vmaFlushAllocation(m_allocator, m_vertexBufferAllocation, 0, VK_WHOLE_SIZE);
 
-        if(!indices.empty())
+        if(!indexData.empty())
         {
-            const VkDeviceSize indexBytes = indices.size_bytes();
+            const VkDeviceSize indexBytes = indexData.size_bytes();
 
             VkBufferCreateInfo indexBufferCI{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
             indexBufferCI.size = indexBytes;
@@ -52,9 +67,14 @@ namespace vela::backend
                     &m_indexBufferAllocation, &indexBufferInfo) != VK_SUCCESS)
                 throw std::runtime_error("Failed to create index buffer");
 
-            std::memcpy(indexBufferInfo.pMappedData, indices.data(), indexBytes);
+            std::memcpy(indexBufferInfo.pMappedData, indexData.data(), indexBytes);
             vmaFlushAllocation(m_allocator, m_indexBufferAllocation, 0, VK_WHOLE_SIZE);
         }
+    }
+
+    VkIndexType MeshImpl::getIndexType() const
+    {
+        return m_indexType;
     }
 
     VkBuffer MeshImpl::getVertexBuffer() const 

@@ -3,8 +3,10 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
-#include "Vela/Core/ContextPreferences.hpp"
+#include "Feature.hpp"
+#include "ContextPreferences.hpp"
 
 namespace vela::core
 {
@@ -40,6 +42,29 @@ namespace vela::core
         uint32_t maxTextureSize2D{0};
         uint32_t maxMsaaSamples{1};
         float maxAnisotropy{1.0f};
+
+        std::vector<Feature> supportedFeatures;
+        std::vector<Feature> enabledFeatures;
+
+        // what the device can do
+        bool supports(Feature feature) const
+        {
+            for (Feature supported : supportedFeatures)
+                if (supported == feature)
+                    return true;
+
+            return false;
+        }
+
+        // what you actually turned on
+        bool enabled(Feature feature) const
+        {
+            for (Feature active : enabledFeatures)
+                if (active == feature)
+                    return true;
+
+            return false;
+        }
     };
 
     struct SwapchainInfo

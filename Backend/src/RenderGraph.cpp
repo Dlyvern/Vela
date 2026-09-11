@@ -51,6 +51,11 @@ namespace vela::graphics
         m_impl->setView(view, projection);
     }
 
+    uint32_t RenderGraph::getFramesInFlight()
+    {
+        return m_impl->getFramesInFlight();
+    }
+
     backend::RenderGraphImpl* RenderGraph::impl() const
     {
         return m_impl.get();

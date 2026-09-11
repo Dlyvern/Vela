@@ -112,6 +112,11 @@ namespace vela::core
         m_windowBackend->getCursorPosition(m_nativeWindow, x, y);
     }
 
+    void Window::setCursorShape(CursorShape shape)
+    {
+        m_windowBackend->setCursorShape(m_nativeWindow, shape);
+    }
+
     void Window::setCursorMode(CursorMode mode)
     {
         m_windowBackend->setCursorMode(m_nativeWindow, mode);

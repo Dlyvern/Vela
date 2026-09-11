@@ -4,8 +4,10 @@
 
 #include "Vela/Graphics/Material.hpp"
 #include "Vela/Graphics/Mesh.hpp"
+#include "Vela/Graphics/DynamicBuffer.hpp"
 
 #include "PassAdapter.hpp"
+#include "DynamicBufferImpl.hpp"
 
 #include "MeshImpl.hpp"
 #include "MaterialImpl.hpp"
@@ -934,45 +936,133 @@ namespace vela::backend
         m_attachments.clear();
     }
 
-    void RenderGraphImpl::draw(const graphics::Mesh& mesh, const graphics::Material& material, const math::Mat4& model)
+    void RenderGraphImpl::bindMaterial(const graphics::Material& material)
     {
-        if(!m_isFrameValid || m_currentRenderGraphPass == nullptr)
-            return;
-
         const MaterialImpl* materialImpl = material.impl();
 
-        if(materialImpl != m_boundMaterial)
+        if(materialImpl == m_boundMaterial)
+            return;
+
+        const PipelineDescription& pipelineDescription = materialImpl->getPipelineDescription();
+
+        VkPipeline pipeline = m_pipelineCache.get(pipelineDescription, m_currentRenderGraphPass->formats);
+
+        if(pipeline != m_boundPipeline)
         {
-            const PipelineDescription& pipelineDescription = materialImpl->getPipelineDescription();
-            VkPipeline pipeline = m_pipelineCache.get(pipelineDescription, m_currentRenderGraphPass->formats);
-
-            if(pipeline != m_boundPipeline)
-            {
-                vkCmdBindPipeline(m_currentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-                m_boundPipeline = pipeline;
-            }
-
-            m_boundPipelineLayout = pipelineDescription.layout;
-
-            std::array<VkDescriptorSet, 2> descriptorSets
-            {
-                m_perViewDescriptorSets[m_frameIndex],
-                VK_NULL_HANDLE
-            };
-
-            uint32_t descriptorSetCount = 1;
-
-            if(VkDescriptorSet materialSet = materialImpl->getDescriptorSet(); materialSet != VK_NULL_HANDLE)
-            {
-                descriptorSets[1] = materialSet;
-                descriptorSetCount = 2;
-            }
-
-            vkCmdBindDescriptorSets(m_currentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_boundPipelineLayout, 0, descriptorSetCount, descriptorSets.data(), 0, nullptr);
-
-            m_boundMaterial = materialImpl;
+            vkCmdBindPipeline(m_currentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            m_boundPipeline = pipeline;
         }
+
+        m_boundPipelineLayout = pipelineDescription.layout;
+        m_boundPushConstantSize = materialImpl->getPushConstantSize();
+        m_boundPushConstantStages = materialImpl->getPushConstantStages();
+
+        std::array<VkDescriptorSet, 2> descriptorSets
+        {
+            m_perViewDescriptorSets[m_frameIndex],
+            VK_NULL_HANDLE
+        };
+
+        uint32_t descriptorSetCount = 1;
+
+        if(VkDescriptorSet materialSet = materialImpl->getDescriptorSet(); materialSet != VK_NULL_HANDLE)
+        {
+            descriptorSets[1] = materialSet;
+            descriptorSetCount = 2;
+        }
+
+        vkCmdBindDescriptorSets(m_currentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_boundPipelineLayout, 0, descriptorSetCount, descriptorSets.data(), 0, nullptr);
+
+        m_boundMaterial = materialImpl;
+    }
+
+    void RenderGraphImpl::bind(const graphics::Material& material)
+    {
+        if(!m_isFrameValid || !m_currentRenderGraphPass)
+            return;
+
+        bindMaterial(material);
+    }
+
+    void RenderGraphImpl::bindVertexBuffer(const graphics::DynamicBuffer& buffer)
+    {
+        if(!m_isFrameValid || !m_currentRenderGraphPass)
+            return;
+
+        VkBuffer vertexBuffer = buffer.impl()->getBuffer();
+
+        if(!vertexBuffer || vertexBuffer == m_boundVertexBuffer)
+            return;
+
+        VkBuffer buffers[] = { vertexBuffer };
+        VkDeviceSize offsets[] = { 0 };
+        vkCmdBindVertexBuffers(m_currentCommandBuffer, 0, 1, buffers, offsets);
+        m_boundVertexBuffer = vertexBuffer;
+    }
+
+    void RenderGraphImpl::bindIndexBuffer(const graphics::DynamicBuffer& buffer)
+    {
+        if(!m_isFrameValid || !m_currentRenderGraphPass)
+            return;
+
+        VkBuffer indexBuffer = buffer.impl()->getBuffer();
+
+        if(!indexBuffer || indexBuffer == m_boundIndexBuffer)
+            return;
+
+        vkCmdBindIndexBuffer(m_currentCommandBuffer, indexBuffer, 0, buffer.impl()->getIndexType());
+        m_boundIndexBuffer = indexBuffer;
+    }
+
+    void RenderGraphImpl::pushConstants(const void* data, uint32_t size)
+    {
+        if(m_boundPipelineLayout == VK_NULL_HANDLE || m_boundPushConstantSize == 0)
+            return;
+
+        vkCmdPushConstants(m_currentCommandBuffer, m_boundPipelineLayout, m_boundPushConstantStages, 0,
+            std::min(size, m_boundPushConstantSize), data);
+    }
+
+    void RenderGraphImpl::setConstants(const math::Mat4& value)
+    {
+        if(!m_isFrameValid || !m_currentRenderGraphPass)
+            return;
+
+        pushConstants(&value, sizeof(math::Mat4));
+    }
+
+    void RenderGraphImpl::setScissor(int32_t x, int32_t y, uint32_t width, uint32_t height)
+    {
+        if(!m_isFrameValid || !m_currentRenderGraphPass)
+            return;
+
+        VkRect2D scissor{};
+
+        scissor.offset.x = x;
+        scissor.offset.y = y;
+
+        scissor.extent.width = width;
+        scissor.extent.height = height;
+
+        vkCmdSetScissor(m_currentCommandBuffer, 0, 1, &scissor);
+    }
+
+    void RenderGraphImpl::drawIndexed(uint32_t indexCount, uint32_t firstIndex, int32_t vertexOffset,
+                 uint32_t instanceCount, uint32_t firstInstance)
+    {
+        if(!m_isFrameValid || !m_currentRenderGraphPass)
+            return;
+
+        vkCmdDrawIndexed(m_currentCommandBuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstance);
+    }
+
+    void RenderGraphImpl::draw(const graphics::Mesh& mesh, const graphics::Material& material, const math::Mat4& model)
+    {
+        if(!m_isFrameValid || !m_currentRenderGraphPass)
+            return;
+
+        bindMaterial(material);
 
         if(VkBuffer vertexBuffer = mesh.impl()->getVertexBuffer(); vertexBuffer != m_boundVertexBuffer)
         {
@@ -983,14 +1073,13 @@ namespace vela::backend
             m_boundVertexBuffer = vertexBuffer;
         }
 
-        vkCmdPushConstants(m_currentCommandBuffer, m_boundPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(math::Mat4),
-        &model);
+        pushConstants(&model, sizeof(math::Mat4));
 
         if (mesh.impl()->isIndexed())
         {
             if (VkBuffer indexBuffer = mesh.impl()->getIndexBuffer(); indexBuffer != m_boundIndexBuffer)
             {
-                vkCmdBindIndexBuffer(m_currentCommandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdBindIndexBuffer(m_currentCommandBuffer, indexBuffer, 0, mesh.impl()->getIndexType());
                 m_boundIndexBuffer = indexBuffer;
             }
 

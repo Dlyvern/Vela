@@ -12,6 +12,7 @@
 #include "Pipeline.hpp"
 #include "DescriptorPool.hpp"
 #include "DeletionQueue.hpp"
+#include "Features.hpp"
 
 #include <optional>
 #include <memory>
@@ -20,11 +21,6 @@
 //TODO Over-Recreating on Every Little Event: Avoid rebuilding the swap chain continuously while a user is actively dragging the window border.
 // You can rate-limit resizes or wait until the resize action finishes. (Only on Linux, maybe worth doing at the end of development)
 
-
-//TODO change tactic:
-//New folder name and new functional
-//For example: particles and we make everything in API to let people make particles
-//Or rtx and we also make everything to make RTX work
 namespace vela::backend
 {
     class ContextImpl
@@ -96,6 +92,9 @@ namespace vela::backend
         void buildDeviceInfo(const VkPhysicalDeviceDriverProperties& driverProperties);
         void logSelectedDevice() const;
 
+        bool supportsRequiredFeatures(VkPhysicalDevice physicalDevice) const;
+        void resolveEnabledFeatures();
+
         VkExtent2D framebufferExtent(const VkSurfaceCapabilitiesKHR& capabilities) const;
 
         bool checkInstanceExtensions(const std::vector<const char*>& extensions);
@@ -136,6 +135,7 @@ namespace vela::backend
         VkPhysicalDeviceMemoryProperties m_physicalDeviceMemoryProperties;
         VkPhysicalDeviceProperties m_physicalDeviceProperties;
         core::DeviceInfo m_deviceInfo;
+        std::vector<core::Feature> m_enabledFeatures;
         uint32_t m_graphicsTimestampValidBits{0};
         bool m_memoryBudgetEnabled{false};
 

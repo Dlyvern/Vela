@@ -7,6 +7,8 @@
 #include <array>
 #include <unordered_map>
 
+struct GLFWcursor;
+
 namespace vela::windowing
 {
     class DesktopWindowBackend final : public core::IWindowBackend
@@ -32,6 +34,7 @@ namespace vela::windowing
         bool isMouseButtonDown(void* nativeWindow, core::MouseButton button) const override;
         void getCursorPosition(void* nativeWindow, double& x, double& y) const override;
         void setCursorMode(void* nativeWindow, core::CursorMode mode) override;
+        void setCursorShape(void* nativeWindow, core::CursorShape shape) override;
 
         bool popEvent(void* nativeWindow, core::Event& event) override;
 
@@ -60,6 +63,7 @@ namespace vela::windowing
 
         std::unordered_map<void*, WindowedRect> m_windowedRects;
         std::unordered_map<void*, std::vector<core::Event>> m_events;
+        std::unordered_map<core::CursorShape, GLFWcursor*> m_cursors;
 
         struct GamepadState
         {

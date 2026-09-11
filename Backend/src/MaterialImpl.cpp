@@ -3,6 +3,7 @@
 #include "ContextImpl.hpp"
 #include "SpirvReflect.hpp"
 
+#include <algorithm>
 #include <stdexcept>
 
 #include <vulkan/vulkan_core.h>
@@ -50,13 +51,32 @@ namespace vela::backend
             m_descriptorSet = m_descriptorPool->allocate(m_descriptorSetLayout);
         }
 
-        VkPushConstantRange modelPushConstant{};
-        modelPushConstant.size = sizeof(math::Mat4);
-        modelPushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        modelPushConstant.offset = 0;
+        const uint32_t vertexPushConstantSize = reflectPushConstantSize(m_vertexShader);
+        const uint32_t fragmentPushConstantSize = reflectPushConstantSize(m_fragmentShader);
+
+        m_pushConstantSize = std::max(vertexPushConstantSize, fragmentPushConstantSize);
+        m_pushConstantStages = 0;
+
+        if (vertexPushConstantSize > 0)
+            m_pushConstantStages |= VK_SHADER_STAGE_VERTEX_BIT;
+
+        if (fragmentPushConstantSize > 0)
+            m_pushConstantStages |= VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        std::vector<VkPushConstantRange> pushConstantRanges;
+
+        if (m_pushConstantSize > 0)
+        {
+            VkPushConstantRange pushConstantRange{};
+            pushConstantRange.size = m_pushConstantSize;
+            pushConstantRange.stageFlags = m_pushConstantStages;
+            pushConstantRange.offset = 0;
+
+            pushConstantRanges.push_back(pushConstantRange);
+        }
 
         m_pipelineLayout = context.impl()->getLayoutCache().getPipelineLayout(
-            {context.impl()->getPerViewDescriptorSetLayout(), m_descriptorSetLayout}, {modelPushConstant});
+            {context.impl()->getPerViewDescriptorSetLayout(), m_descriptorSetLayout}, pushConstantRanges);
 
         m_pipelineDescription.vertexShader = m_vertexShader;
         m_pipelineDescription.fragmentShader = m_fragmentShader;
@@ -70,6 +90,16 @@ namespace vela::backend
         m_pipelineDescription.depthWrite = m_materialDescription.renderState.depthWrite;
         m_pipelineDescription.depthCompare = toVkCompare(m_materialDescription.renderState.depthCompare);
         m_pipelineDescription.blend = m_materialDescription.renderState.blend;
+    }
+
+    uint32_t MaterialImpl::getPushConstantSize() const
+    {
+        return m_pushConstantSize;
+    }
+
+    VkShaderStageFlags MaterialImpl::getPushConstantStages() const
+    {
+        return m_pushConstantStages;
     }
 
     VkDescriptorSetLayout MaterialImpl::getDescriptorSetLayout() const

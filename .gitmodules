@@ -10,3 +10,6 @@
 [submodule "vendor/stb"]
 	path = vendor/stb
 	url = https://github.com/nothings/stb.git
+[submodule "Examples/vendor/imgui"]
+	path = Examples/vendor/imgui
+	url = https://github.com/ocornut/imgui.git

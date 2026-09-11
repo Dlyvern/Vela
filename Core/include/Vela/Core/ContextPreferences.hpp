@@ -1,8 +1,11 @@
 #ifndef VELA_CORE_CONTEXT_PREFERENCES_HPP
 #define VELA_CORE_CONTEXT_PREFERENCES_HPP
 
+#include "Feature.hpp"
+
 #include <string>
 #include <cstdint>
+#include <vector>
 
 namespace vela::core
 {
@@ -42,6 +45,9 @@ namespace vela::core
         Version engineVersion{};
         GpuPreference preferredGpu{GpuPreference::Discrete};
         VSync preferredVSync{VSync::Fast};
+
+        std::vector<Feature> requiredFeatures;
+        std::vector<Feature> optionalFeatures;
     };
 } //namespace vela::core
 

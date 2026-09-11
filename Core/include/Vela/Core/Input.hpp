@@ -104,6 +104,22 @@ namespace vela::core
         bool shift{false};
         bool control{false};
         bool alt{false};
+        bool super{false};
+        bool capsLock{false};
+        bool numLock{false};
+    };
+
+    enum class CursorShape : uint8_t
+    {
+        Arrow = 0,
+        TextInput,
+        Hand,
+        NotAllowed,
+        ResizeAll,
+        ResizeNS,
+        ResizeEW,
+        ResizeNESW,
+        ResizeNWSE
     };
 
     enum class EventType : uint8_t

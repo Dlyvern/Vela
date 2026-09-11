@@ -31,6 +31,8 @@ namespace vela::backend
         void retireFrame();
         void flushAll();
 
+        [[nodiscard]] uint64_t currentFrame() const;
+
     private:
         void destroy(const DeletionEntry& entry);
 

@@ -19,27 +19,35 @@ namespace vela::backend
 
     ContextImpl::~ContextImpl()
     {
-        vkDeviceWaitIdle(m_device);
+        if (m_device != VK_NULL_HANDLE)
+        {
+            vkDeviceWaitIdle(m_device);
 
-        m_deletionQueue->flushAll();
+            if (m_deletionQueue)
+                m_deletionQueue->flushAll();
 
-        // After every allocation it owns, never before.
-        vmaDestroyAllocator(m_allocator);
+            // After every allocation it owns, never before.
+            if (m_allocator != VK_NULL_HANDLE)
+                vmaDestroyAllocator(m_allocator);
 
-        for (auto& imageView : m_swapchainImageViews)
-            vkDestroyImageView(m_device, imageView, nullptr);
+            for (auto& imageView : m_swapchainImageViews)
+                vkDestroyImageView(m_device, imageView, nullptr);
 
-        vkDestroyCommandPool(m_device, m_commandPool, nullptr);
+            vkDestroyCommandPool(m_device, m_commandPool, nullptr);
 
-        vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+            vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
 
-        m_descriptorPool.reset();
-        m_layoutCache.reset();
+            m_descriptorPool.reset();
+            m_layoutCache.reset();
 
-        vkDestroyDevice(m_device, nullptr);
-        vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
+            vkDestroyDevice(m_device, nullptr);
+        }
 
-        vkDestroyInstance(m_instance, nullptr);
+        if (m_surface != VK_NULL_HANDLE)
+            vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
+
+        if (m_instance != VK_NULL_HANDLE)
+            vkDestroyInstance(m_instance, nullptr);
     }
 
     VmaAllocator ContextImpl::getAllocator() const
@@ -409,6 +417,9 @@ namespace vela::backend
             if(!checkQueueFamilyProperties(physicalDevice))
                 continue;
 
+            if(!supportsRequiredFeatures(physicalDevice))
+                continue;
+
             if(physicalDeviceProperties.deviceType == preferredType)
             {
                 m_physicalDevice = physicalDevice;
@@ -426,7 +437,25 @@ namespace vela::backend
         if (!m_physicalDevice)
         {
             if (fallbackDevice == VK_NULL_HANDLE)
+            {
+                for (core::Feature feature : m_contextPreferences.requiredFeatures)
+                {
+                    bool anyDeviceSupports = false;
+
+                    for (const auto& physicalDevice : physicalDevices)
+                        if (deviceSupportsFeature(physicalDevice, feature))
+                        {
+                            anyDeviceSupports = true;
+                            break;
+                        }
+
+                    if (!anyDeviceSupports)
+                        throw std::runtime_error(std::string("No device supports Feature::")
+                            + core::toString(feature));
+                }
+
                 throw std::runtime_error("No suitable physical device found");
+            }
 
             m_physicalDevice = fallbackDevice;
             m_queueFamilyIndices = fallbackIndices;
@@ -453,8 +482,37 @@ namespace vela::backend
 
         m_graphicsTimestampValidBits = queueFamilies[m_queueFamilyIndices.graphics.value()].timestampValidBits;
 
+        resolveEnabledFeatures();
+
         buildDeviceInfo(driverProperties);
         logSelectedDevice();
+    }
+
+    bool ContextImpl::supportsRequiredFeatures(VkPhysicalDevice physicalDevice) const
+    {
+        for (core::Feature feature : m_contextPreferences.requiredFeatures)
+            if (!deviceSupportsFeature(physicalDevice, feature))
+                return false;
+
+        return true;
+    }
+
+    void ContextImpl::resolveEnabledFeatures()
+    {
+        m_enabledFeatures.clear();
+
+        auto alreadyEnabled = [this](core::Feature feature)
+        {
+            return std::find(m_enabledFeatures.begin(), m_enabledFeatures.end(), feature) != m_enabledFeatures.end();
+        };
+
+        for (core::Feature feature : m_contextPreferences.requiredFeatures)
+            if (!alreadyEnabled(feature))
+                m_enabledFeatures.push_back(feature);
+
+        for (core::Feature feature : m_contextPreferences.optionalFeatures)
+            if (!alreadyEnabled(feature) && deviceSupportsFeature(m_physicalDevice, feature))
+                m_enabledFeatures.push_back(feature);
     }
 
     void ContextImpl::buildDeviceInfo(const VkPhysicalDeviceDriverProperties& driverProperties)
@@ -509,6 +567,12 @@ namespace vela::backend
         m_deviceInfo.unifiedMemory = m_deviceInfo.type == core::DeviceType::IntegratedGpu
                                   || m_deviceInfo.type == core::DeviceType::Cpu;
 
+        for (core::Feature feature : allFeatures())
+            if (deviceSupportsFeature(m_physicalDevice, feature))
+                m_deviceInfo.supportedFeatures.push_back(feature);
+
+        m_deviceInfo.enabledFeatures = m_enabledFeatures;
+
         m_deviceInfo.timestampsSupported = m_graphicsTimestampValidBits != 0 && limits.timestampPeriod != 0.0f;
         m_deviceInfo.timestampPeriodNs = limits.timestampPeriod;
 
@@ -549,6 +613,16 @@ namespace vela::backend
         std::cout << "Max 2D texture size: " << m_deviceInfo.maxTextureSize2D << '\n';
         std::cout << "Max MSAA samples: " << m_deviceInfo.maxMsaaSamples << '\n';
         std::cout << "Max anisotropy: " << m_deviceInfo.maxAnisotropy << '\n';
+
+        std::cout << "Supported features:";
+        for (core::Feature feature : m_deviceInfo.supportedFeatures)
+            std::cout << ' ' << core::toString(feature);
+        std::cout << '\n';
+
+        std::cout << "Enabled features:";
+        for (core::Feature feature : m_deviceInfo.enabledFeatures)
+            std::cout << ' ' << core::toString(feature);
+        std::cout << '\n';
         std::cout << "Present queue family " << m_queueFamilyIndices.present.value() << '\n';
         std::cout << "Graphics queue family " << m_queueFamilyIndices.graphics.value() << '\n';
         std::cout << "Transfer queue family " << m_queueFamilyIndices.transfer.value() << '\n';
@@ -611,14 +685,29 @@ namespace vela::backend
             VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         };
 
-        VkPhysicalDeviceVulkan13Features features13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
-        features13.dynamicRendering = VK_TRUE;
-        features13.synchronization2 = VK_TRUE;
+        for (core::Feature feature : m_enabledFeatures)
+        {
+            for (const char* extensionName : featureExtensions(feature))
+            {
+                const bool alreadyRequested = std::any_of(deviceExtensions.begin(), deviceExtensions.end(),
+                    [extensionName](const char* requested){ return std::strcmp(requested, extensionName) == 0; });
 
-        // VkPhysicalDeviceVulkan14Features features14{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES};
+                if (!alreadyRequested)
+                    deviceExtensions.push_back(extensionName);
+            }
+        }
+
+        FeatureChain featureChain{};
+        featureChain.features13.dynamicRendering = VK_TRUE;
+        featureChain.features13.synchronization2 = VK_TRUE;
+
+        for (core::Feature feature : m_enabledFeatures)
+            featureChain.enable(feature);
+
+        featureChain.link(m_enabledFeatures);
 
         VkDeviceCreateInfo deviceCI{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
-        deviceCI.pNext = &features13;
+        deviceCI.pNext = &featureChain.features2;
         deviceCI.queueCreateInfoCount = static_cast<uint32_t>(queueInfos.size());
         deviceCI.pQueueCreateInfos = queueInfos.data();
         deviceCI.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());

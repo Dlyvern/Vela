@@ -8,6 +8,11 @@ namespace vela::backend
 
     }
 
+    uint64_t DeletionQueue::currentFrame() const
+    {
+        return m_currentFrame;
+    }
+
     void DeletionQueue::push(const DeletionEntry& entry)
     {
         m_pending.push_back({m_currentFrame, entry});

@@ -29,6 +29,9 @@ namespace vela::backend
         const PipelineDescription& getPipelineDescription() const;
         VkDescriptorSetLayout getDescriptorSetLayout() const;
 
+        uint32_t getPushConstantSize() const;
+        VkShaderStageFlags getPushConstantStages() const;
+
         Status setTexture(uint32_t slot, VkImageView imageView, VkSampler sampler);
 
         const graphics::MaterialDescription& getMaterialDescription() const;
@@ -47,6 +50,8 @@ namespace vela::backend
         VkPipelineLayout m_pipelineLayout{VK_NULL_HANDLE};
         VkDevice m_device{VK_NULL_HANDLE};
         uint32_t m_textureCount{0};
+        uint32_t m_pushConstantSize{0};
+        VkShaderStageFlags m_pushConstantStages{0};
         DeletionQueue* m_deletionQueue{nullptr};
     };
 } //namespace vela::backend

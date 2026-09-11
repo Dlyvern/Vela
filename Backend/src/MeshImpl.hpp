@@ -20,11 +20,13 @@ namespace vela::backend
     class MeshImpl
     {
     public:
-        MeshImpl(core::Context& ctx, std::span<const std::byte> vertexData, uint32_t vertexCount, std::span<const uint32_t> indices);
+        MeshImpl(core::Context& ctx, std::span<const std::byte> vertexData, uint32_t vertexCount,
+            std::span<const std::byte> indexData, uint32_t indexCount, VkIndexType indexType);
         ~MeshImpl();
 
         VkBuffer getVertexBuffer() const;
         VkBuffer getIndexBuffer() const;
+        VkIndexType getIndexType() const;
 
         bool isIndexed() const;
         uint32_t getIndexCount() const;
@@ -40,6 +42,7 @@ namespace vela::backend
 
         uint32_t m_vertexCount{0};
         uint32_t m_indexCount{0};
+        VkIndexType m_indexType{VK_INDEX_TYPE_UINT32};
 
         DeletionQueue* m_deletionQueue{nullptr};
     };

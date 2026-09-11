@@ -38,7 +38,10 @@ int main(int argc, char** argv)
 
     vela::core::Window window = std::move(windowResult).value();
 
-    auto contextResult = vela::core::Context::create(window);
+    vela::core::ContextPreferences contextPreferences{};
+    contextPreferences.preferredVSync = vela::core::VSync::Fast;
+
+    auto contextResult = vela::core::Context::create(window, contextPreferences);
 
     if (!contextResult)
         return fail(contextResult.error());
@@ -47,6 +50,13 @@ int main(int argc, char** argv)
 
     if (auto attached = context.attach(window); !attached)
         return fail(attached.error());
+
+    const vela::core::SwapchainInfo swapchain = context.getSwapchainInfo();
+
+    std::cout << "swapchain " << swapchain.width << 'x' << swapchain.height
+              << " | images " << swapchain.imageCount
+              << " | vsync requested " << vela::core::toString(swapchain.requestedVSync)
+              << ", got " << vela::core::toString(swapchain.actualVSync) << '\n';
 
     auto litVertResult = vela::assets::loadSpirv(vela::assets::resources::find("shaders/lit.vert.spv").string());
     auto litFragResult = vela::assets::loadSpirv(vela::assets::resources::find("shaders/lit.frag.spv").string());
@@ -120,6 +130,11 @@ int main(int argc, char** argv)
 
     bool fullscreen = false;
 
+    auto lastStatPrint = std::chrono::steady_clock::now();
+    uint32_t statFrames = 0;
+    float statCpuMs = 0.0f;
+    float statGpuMs = 0.0f;
+
     while (window.isOpen())
     {
         const auto now = std::chrono::steady_clock::now();
@@ -156,6 +171,29 @@ int main(int argc, char** argv)
 
         const vela::graphics::FrameStats stats = graph.getFrameStats();
         const vela::core::MemoryStats memory = context.getMemoryStats();
+
+        ++statFrames;
+        statCpuMs += stats.cpuFrameMs;
+        statGpuMs += stats.gpuTimingValid ? stats.gpuFrameMs : 0.0f;
+
+        if (const auto elapsed = now - lastStatPrint; elapsed >= std::chrono::seconds(1))
+        {
+            const float seconds = std::chrono::duration<float>(elapsed).count();
+
+            std::cout << "fps " << static_cast<uint32_t>(statFrames / seconds)
+                      << " | cpu " << statCpuMs / static_cast<float>(statFrames) << " ms"
+                      << " | gpu " << statGpuMs / static_cast<float>(statFrames) << " ms"
+                      << " | draws " << model.instances.size()
+                      << " | vram " << memory.deviceBytesUsed / (1024 * 1024) << " / "
+                      << memory.deviceBytesBudget / (1024 * 1024) << " MB"
+                      << " | allocations " << memory.allocationCount
+                      << " | validation " << context.getValidationMessageCount() << '\n';
+
+            statFrames = 0;
+            statCpuMs = 0.0f;
+            statGpuMs = 0.0f;
+            lastStatPrint = now;
+        }
 
         ImGui::Begin("LittleEngine");
         ImGui::Text("%s", context.getDeviceInfo().name.c_str());

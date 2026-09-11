@@ -6,6 +6,8 @@
 #include "Vela/Assets/Image.hpp"
 #include "Vela/Graphics/Vertex.hpp"
 
+#include <ktx.h>
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -16,8 +18,10 @@
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <span>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 
 namespace little
 {
@@ -48,6 +52,98 @@ namespace little
                 m[1] * point.x + m[5] * point.y + m[9]  * point.z + m[13],
                 m[2] * point.x + m[6] * point.y + m[10] * point.z + m[14]
             };
+        }
+
+        struct KtxImage
+        {
+            KtxImage() = default;
+
+            ~KtxImage()
+            {
+                if (texture != nullptr)
+                    ktxTexture_Destroy(ktxTexture(texture));
+            }
+
+            KtxImage(KtxImage&& other) noexcept : texture(other.texture)
+            {
+                other.texture = nullptr;
+            }
+
+            KtxImage& operator=(KtxImage&& other) noexcept
+            {
+                std::swap(texture, other.texture);
+
+                return *this;
+            }
+
+            KtxImage(const KtxImage&) = delete;
+            KtxImage& operator=(const KtxImage&) = delete;
+
+            ktxTexture2* texture{nullptr};
+        };
+
+        struct DecodedImage
+        {
+            [[nodiscard]] bool valid() const
+            {
+                return ktx.texture != nullptr || stb.has_value();
+            }
+
+            [[nodiscard]] vela::graphics::ImageData data() const
+            {
+                if (ktx.texture == nullptr)
+                    return stb->data();
+
+                vela::graphics::ImageData imageData{};
+                imageData.pixels = std::span(
+                    reinterpret_cast<const std::byte*>(ktx.texture->pData), ktx.texture->dataSize);
+                imageData.width = ktx.texture->baseWidth;
+                imageData.height = ktx.texture->baseHeight;
+                imageData.format = vela::graphics::TextureFormat::BC7Srgb;
+                imageData.levels = ktx.texture->numLevels;
+
+                return imageData;
+            }
+
+            void reset()
+            {
+                stb.reset();
+                ktx = KtxImage{};
+            }
+
+            std::optional<vela::assets::Image> stb;
+            KtxImage ktx;
+        };
+
+        DecodedImage loadImage(const std::filesystem::path& path)
+        {
+            DecodedImage result{};
+
+            if (path.extension() != ".ktx2")
+            {
+                if (auto loaded = vela::assets::Image::load(path.string()); loaded)
+                    result.stb = std::move(loaded).value();
+
+                return result;
+            }
+
+            ktxTexture2* texture = nullptr;
+
+            if (ktxTexture2_CreateFromNamedFile(path.string().c_str(),
+                    KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &texture) != KTX_SUCCESS)
+                return result;
+
+            if (ktxTexture2_NeedsTranscoding(texture)
+                && ktxTexture2_TranscodeBasis(texture, KTX_TTF_BC7_RGBA, 0) != KTX_SUCCESS)
+            {
+                ktxTexture_Destroy(ktxTexture(texture));
+
+                return result;
+            }
+
+            result.ktx.texture = texture;
+
+            return result;
         }
 
         vela::Result<vela::graphics::Texture> whiteTexture(vela::core::Context& context)
@@ -223,7 +319,7 @@ namespace little
             uniqueImages.push_back(image);
         }
 
-        std::vector<std::optional<vela::assets::Image>> decoded(uniqueImages.size());
+        std::vector<DecodedImage> decoded(uniqueImages.size());
 
         const auto imageStart = Clock::now();
 
@@ -242,13 +338,7 @@ namespace little
                 workers.emplace_back([&]
                 {
                     for (size_t index = nextImage++; index < uniqueImages.size(); index = nextImage++)
-                    {
-                        auto loaded = vela::assets::Image::load(
-                            (baseDirectory / uniqueImages[index]->uri).string());
-
-                        if (loaded)
-                            decoded[index] = std::move(loaded).value();
-                    }
+                        decoded[index] = loadImage(baseDirectory / uniqueImages[index]->uri);
                 });
             }
 
@@ -277,13 +367,13 @@ namespace little
 
         for (size_t index = 0; index < uniqueImages.size(); ++index)
         {
-            if (!decoded[index].has_value())
+            if (!decoded[index].valid())
             {
                 std::cerr << "Failed to decode " << uniqueImages[index]->uri << '\n';
                 continue;
             }
 
-            auto texture = vela::graphics::Texture::create(context, decoded[index]->data());
+            auto texture = vela::graphics::Texture::create(context, decoded[index].data());
 
             if (!texture)
             {

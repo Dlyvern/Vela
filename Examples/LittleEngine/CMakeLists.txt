@@ -14,6 +14,7 @@ target_link_libraries(LittleEngine PRIVATE
     Vela::Builtins
     imgui
     cgltf
+    ktx
 )
 
 vela_compile_shaders(

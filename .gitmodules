@@ -16,3 +16,6 @@
 [submodule "Examples/vendor/cgltf"]
 	path = Examples/vendor/cgltf
 	url = https://github.com/jkuhlmann/cgltf
+[submodule "Examples/vendor/KTX-Software"]
+	path = Examples/vendor/KTX-Software
+	url = https://github.com/KhronosGroup/KTX-Software.git

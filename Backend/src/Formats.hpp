@@ -6,9 +6,58 @@
 #include "Pass.hpp"
 
 #include "Vela/Graphics/RenderTypes.hpp"
+#include "Vela/Graphics/ImageData.hpp"
 
 namespace vela::backend
 {
+    [[nodiscard]] constexpr VkFilter toVkFilter(graphics::Filter filter)
+    {
+        switch (filter)
+        {
+            case graphics::Filter::Nearest:
+                return VK_FILTER_NEAREST;
+
+            case graphics::Filter::Linear:
+                return VK_FILTER_LINEAR;
+        }
+
+        return VK_FILTER_NEAREST;
+    }
+
+    [[nodiscard]] constexpr VkSamplerAddressMode toVkAddressMode(graphics::AddressMode mode)
+    {
+        switch (mode)
+        {
+            case graphics::AddressMode::Repeat:
+                return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+
+            case graphics::AddressMode::MirroredRepeat:
+                return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+
+            case graphics::AddressMode::ClampToEdge:
+                return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
+            case graphics::AddressMode::ClampToBorder:
+                return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        }
+
+        return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    }
+
+    [[nodiscard]] constexpr VkSamplerMipmapMode toVkMipMode(graphics::MipMode mode)
+    {
+        switch (mode)
+        {
+            case graphics::MipMode::Nearest:
+                return VK_SAMPLER_MIPMAP_MODE_NEAREST;
+
+            case graphics::MipMode::Linear:
+                return VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        }
+
+        return VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    }
+
     [[nodiscard]] inline VkCullModeFlags toVkCullMode(graphics::CullMode cullMode)
     {   
         switch(cullMode)
@@ -53,10 +102,12 @@ namespace vela::backend
     {
         switch (format)
         {
-            case graphics::TextureFormat::RGBA8Srgb:    return VK_FORMAT_R8G8B8A8_SRGB;
-            case graphics::TextureFormat::RGBA8Unorm:   return VK_FORMAT_R8G8B8A8_UNORM;
-            case graphics::TextureFormat::RGBA16Float:  return VK_FORMAT_R16G16B16A16_SFLOAT;
+            case graphics::TextureFormat::RGBA8Srgb: return VK_FORMAT_R8G8B8A8_SRGB;
+            case graphics::TextureFormat::RGBA8Unorm: return VK_FORMAT_R8G8B8A8_UNORM;
+            case graphics::TextureFormat::RGBA16Float: return VK_FORMAT_R16G16B16A16_SFLOAT;
             case graphics::TextureFormat::Depth32Float: return VK_FORMAT_D32_SFLOAT;
+            case graphics::TextureFormat::BC7Srgb: return VK_FORMAT_BC7_SRGB_BLOCK;
+            case graphics::TextureFormat::BC7Unorm: return VK_FORMAT_BC7_UNORM_BLOCK;
         }
 
         return VK_FORMAT_UNDEFINED;

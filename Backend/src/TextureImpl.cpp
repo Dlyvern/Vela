@@ -4,8 +4,10 @@
 
 #include "Formats.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
+#include <vector>
 
 namespace vela::backend
 {
@@ -17,10 +19,28 @@ namespace vela::backend
         if (graphics::isDepthFormat(image.format))
             throw std::runtime_error("Texture cannot be created from a depth format");
 
-        const size_t expected = static_cast<size_t>(image.width) * image.height * graphics::bytesPerPixel(image.format);
+        if (image.levels == 0)
+            throw std::runtime_error("Texture must have at least one mip level");
+
+        size_t expected = 0;
+
+        uint32_t mipWidth = image.width;
+        uint32_t mipHeight = image.height;
+
+        for (uint32_t level = 0; level < image.levels; ++level)
+        {
+            expected += graphics::imageSizeBytes(
+                image.format,
+                mipWidth,
+                mipHeight
+            );
+
+            mipWidth = std::max(1u, mipWidth / 2);
+            mipHeight = std::max(1u, mipHeight / 2);
+        }
 
         if (image.pixels.size() < expected)
-            throw std::runtime_error("Image pixel buffer is smaller than width * height * bytes per pixel");
+            throw std::runtime_error("Image pixel buffer is smaller than expected");
 
         const uint32_t width = image.width;
         const uint32_t height = image.height;
@@ -52,7 +72,7 @@ namespace vela::backend
         VkImageCreateInfo imageCI{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
         imageCI.imageType = VK_IMAGE_TYPE_2D;
         imageCI.extent = {width, height, 1};
-        imageCI.mipLevels = 1;
+        imageCI.mipLevels = image.levels;
         imageCI.arrayLayers = 1;
         imageCI.format = format;
         imageCI.tiling = VK_IMAGE_TILING_OPTIMAL; 
@@ -83,7 +103,7 @@ namespace vela::backend
         // For UNDEFINED → TRANSFER_DST_OPTIMAL:
         VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         barrier.image = m_image;
-        barrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        barrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, image.levels, 0, 1 };
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -100,15 +120,53 @@ namespace vela::backend
 
         vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
 
-        VkBufferImageCopy region{};
-        region.bufferOffset = 0;
-        region.bufferRowLength = 0;  
-        region.bufferImageHeight = 0;
-        region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-        region.imageOffset = {0,0,0};
-        region.imageExtent = imageCI.extent;
+        std::vector<VkBufferImageCopy> regions;
+        regions.reserve(image.levels);
 
-        vkCmdCopyBufferToImage(commandBuffer, stagingBuf, m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        VkDeviceSize bufferOffset = 0;
+
+        mipWidth = width;
+        mipHeight = height;
+
+        for (uint32_t mip = 0; mip < image.levels; ++mip)
+        {
+            VkBufferImageCopy region{};
+
+            region.bufferOffset = bufferOffset;
+
+            region.bufferRowLength = 0;
+            region.bufferImageHeight = 0;
+
+            region.imageSubresource = {
+                VK_IMAGE_ASPECT_COLOR_BIT,
+                mip,
+                0,
+                1
+            };
+
+            region.imageOffset = { 0, 0, 0 };
+
+            region.imageExtent = {
+                mipWidth,
+                mipHeight,
+                1
+            };
+
+            regions.push_back(region);
+
+            bufferOffset += graphics::imageSizeBytes(
+                image.format,
+                mipWidth,
+                mipHeight
+            );
+
+            mipWidth = std::max(1u, mipWidth / 2);
+            mipHeight = std::max(1u, mipHeight / 2);
+        }
+
+        vkCmdCopyBufferToImage(commandBuffer, stagingBuf,
+            m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            static_cast<uint32_t>(regions.size()), regions.data());
 
         // For TRANSFER_DST_OPTIMAL → SHADER_READ_ONLY_OPTIMAL:
         barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -148,7 +206,7 @@ namespace vela::backend
         viewCI.image = m_image;
         viewCI.viewType = VK_IMAGE_VIEW_TYPE_2D;
         viewCI.format = format;
-        viewCI.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        viewCI.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, image.levels, 0, 1 };
 
         if(VkResult result = vkCreateImageView(m_device, &viewCI, nullptr, &m_imageView); result != VK_SUCCESS)
             throw std::runtime_error("Failed to create image view");
@@ -159,7 +217,7 @@ namespace vela::backend
         samplerCI.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         samplerCI.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         samplerCI.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerCI.maxLod = 1.0f;
+        samplerCI.maxLod = static_cast<float>(image.levels);
 
         if(VkResult result = vkCreateSampler(m_device, &samplerCI, nullptr, &m_sampler); result != VK_SUCCESS)
             throw std::runtime_error("Failed to create sampler");

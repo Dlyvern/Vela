@@ -44,7 +44,8 @@ namespace vela::graphics
 
     enum class DepthCompare : uint8_t
     {
-        Never = 0,
+        None = 0,
+        Never,
         Less,
         Equal,
         LessOrEqual,

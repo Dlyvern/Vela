@@ -18,6 +18,8 @@ namespace vela::graphics
         math::Mat4 model{1.0f};
     };
 
+
+    //TODO add delete one submission
     class RenderScene
     {
     public:

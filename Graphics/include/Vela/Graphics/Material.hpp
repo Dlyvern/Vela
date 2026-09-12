@@ -3,6 +3,7 @@
 
 #include "VertexLayout.hpp"
 #include "RenderTypes.hpp"
+#include "DynamicBuffer.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -59,6 +60,8 @@ namespace vela::graphics
         Material& operator=(const Material&) = delete;
 
         Status setTexture(uint32_t slot, const Texture& texture);
+
+        Status setStorageBuffer(uint32_t slot, const DynamicBuffer& buffer);
 
         template<typename Slot> requires std::is_enum_v<Slot>
         Status setTexture(Slot slot, const Texture& texture)

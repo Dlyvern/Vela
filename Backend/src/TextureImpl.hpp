@@ -2,6 +2,7 @@
 #define VELA_BACKEND_TEXTURE_IMPL_HPP
 
 #include "Vela/Graphics/ImageData.hpp"
+#include "Vela/Graphics/Sampler.hpp"
 
 #include "volk.h"
 #include "vk_mem_alloc.h"
@@ -18,7 +19,7 @@ namespace vela::backend
     class TextureImpl
     {
     public:
-        TextureImpl(core::Context& context, const graphics::ImageData& image);
+        TextureImpl(core::Context& context, const graphics::ImageData& image, const graphics::SamplerDescription& samplerDescription = {});
         ~TextureImpl();
 
         VkImageView getImageView() const;

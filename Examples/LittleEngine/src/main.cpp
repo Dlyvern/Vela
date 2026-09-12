@@ -1,18 +1,23 @@
 #include "LittleEngine/FlyCamera.hpp"
 #include "LittleEngine/ImGuiLayer.hpp"
 #include "LittleEngine/Model.hpp"
+#include "LittleEngine/LitPass.hpp"
+#include "LittleEngine/ShadowPass.hpp"
 
 #include "Vela/Assets/Resources.hpp"
 #include "Vela/Assets/Shader.hpp"
 #include "Vela/Builtins/ScenePass.hpp"
 #include "Vela/Core/Context.hpp"
 #include "Vela/Core/Window.hpp"
+#include "Vela/Graphics/DynamicBuffer.hpp"
 #include "Vela/Graphics/RenderGraph.hpp"
 #include "Vela/Graphics/RenderScene.hpp"
+#include "Vela/Math/Math.hpp"
 
 #include <chrono>
 #include <iostream>
 #include <memory>
+#include <span>
 
 namespace
 {
@@ -23,6 +28,7 @@ namespace
     }
 }
 
+//TODO check how post processing works
 int main(int argc, char** argv)
 {
     if (argc < 2)
@@ -40,6 +46,7 @@ int main(int argc, char** argv)
 
     vela::core::ContextPreferences contextPreferences{};
     contextPreferences.preferredVSync = vela::core::VSync::Fast;
+    contextPreferences.optionalFeatures.push_back(vela::core::Feature::SamplerAnisotropy);
 
     auto contextResult = vela::core::Context::create(window, contextPreferences);
 
@@ -114,13 +121,54 @@ int main(int argc, char** argv)
 
     vela::graphics::RenderGraph graph = std::move(graphResult).value();
 
-    if (auto added = graph.addPass("scene", std::make_unique<vela::builtins::ScenePass>(scene)); !added)
+    if (auto added = graph.addPass("scene", std::make_unique<little::LitPass>(scene)); !added)
         return fail(added.error());
 
     if (auto added = graph.addPass("ui", ui.createPass("color")); !added)
         return fail(added.error());
 
+    auto shadowPass = std::make_unique<little::ShadowPass>(context, &scene);
+    little::ShadowPass* shadow = shadowPass.get();
+
+    if (auto added = graph.addPass("shadow", std::move(shadowPass)); !added)
+        return fail(added.error());
+
     graph.setPresentSource("color");
+
+    const vela::math::Vector3f lightDirection =
+        vela::math::normalize(vela::math::Vector3f(0.4f, 1.0f, 0.3f));
+
+    const vela::math::Vector3f sceneCenter = model.bounds.center();
+    const float sceneRadius = model.bounds.diagonal() * 0.5f;
+
+    const vela::math::Mat4 lightView = vela::math::lookAt(
+        sceneCenter + lightDirection * sceneRadius * 2.0f,
+        sceneCenter,
+        vela::math::Vector3f(0.0f, 1.0f, 0.0f));
+
+    vela::math::Mat4 lightProjection = vela::math::ortho(
+        -sceneRadius, sceneRadius, -sceneRadius, sceneRadius, 0.01f, sceneRadius * 4.0f);
+
+    lightProjection[1][1] *= -1.0f;
+
+    const vela::math::Mat4 lightViewProjection = lightProjection * lightView;
+
+    shadow->setLightViewProjection(lightViewProjection);
+
+    auto lightBufferResult = vela::graphics::DynamicBuffer::create(
+        context, vela::graphics::DynamicBuffer::Usage::Storage, sizeof(vela::math::Mat4));
+
+    if (!lightBufferResult)
+        return fail(lightBufferResult.error());
+
+    vela::graphics::DynamicBuffer lightBuffer = std::move(lightBufferResult).value();
+
+    if (auto updated = lightBuffer.update(std::as_bytes(std::span(&lightViewProjection, 1))); !updated)
+        return fail(updated.error());
+
+    for (vela::graphics::Material& material : model.materials)
+        if (auto bound = material.setStorageBuffer(1, lightBuffer); !bound)
+            return fail(bound.error());
 
     little::FlyCamera camera;
     camera.frame(model.bounds.center(), model.bounds.diagonal());

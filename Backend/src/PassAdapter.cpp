@@ -16,6 +16,8 @@ namespace
         output.store = vela::backend::toVkStoreOp(slot.store);
         output.clear = vela::backend::toVkClearValue(slot.clear, isDepth);
         output.scale = slot.scale;
+        output.size.height = slot.size.height;
+        output.size.width = slot.size.width;
 
         return output;
     }
@@ -70,6 +72,14 @@ namespace vela::graphics
             return;
 
         m_graph->bindMaterialStorageBuffer(slot, bufferName);
+    }
+
+    void PassRecorder::bindAttachment(uint32_t slot, const std::string& attachmentName)
+    {
+        if(!m_graph)
+            return;
+
+        m_graph->bindAttachment(slot, attachmentName);
     }
 
     void PassRecorder::setConstants(const math::Mat4& value)

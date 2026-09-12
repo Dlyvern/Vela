@@ -51,6 +51,7 @@ namespace vela::backend
         void draw(const graphics::Mesh& mesh, const graphics::Material& material, const math::Mat4& model);
         void bind(const graphics::Material& material);
         void bindVertexBuffer(const graphics::DynamicBuffer& buffer);
+        void bindAttachment(uint32_t slot, const std::string& attachmentName);
         void bindIndexBuffer(const graphics::DynamicBuffer& buffer);
         void setConstants(const math::Mat4& value);
         void bindMaterialStorageBuffer(uint32_t slot, const std::string& bufferName);
@@ -168,6 +169,7 @@ namespace vela::backend
 
         VkDescriptorPool m_descriptorPool{VK_NULL_HANDLE};
         std::array<VkDescriptorSet, k_framesInFlight> m_perViewDescriptorSets;
+        std::array<VkDescriptorSet, k_framesInFlight> m_passInputDescriptorSets{VK_NULL_HANDLE};
         std::array<VkBuffer, k_framesInFlight> m_perViewBuffer{VK_NULL_HANDLE};
         std::array<VmaAllocation, k_framesInFlight> m_perViewBufferAllocation{VK_NULL_HANDLE};
         std::array<void*, k_framesInFlight> m_perViewMapped{nullptr};

@@ -21,6 +21,11 @@ namespace vela::backend
         return m_deletionQueue->currentFrame() % k_slotCount;
     }
 
+    size_t DynamicBufferImpl::getSize() const
+    {
+        return m_size;
+    }
+
     bool DynamicBufferImpl::reallocate(size_t newSize)
     {
         if (newSize == 0)

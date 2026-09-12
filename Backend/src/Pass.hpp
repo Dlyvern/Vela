@@ -19,6 +19,7 @@ namespace vela::backend
         VkFormat format{VK_FORMAT_UNDEFINED};
         VkExtent2D extent{};
         bool external{false};
+        bool isFixedSize{false};
     };
 
     struct PassContext
@@ -41,6 +42,7 @@ namespace vela::backend
         VkAttachmentStoreOp store{VK_ATTACHMENT_STORE_OP_STORE};
         VkClearValue clear{};
         float scale{1.0f};
+        VkExtent2D size{};
     };
 
     enum class InputUsage : uint8_t { Sampled = 0, TransferSource };

@@ -2,6 +2,9 @@
 
 #include "MaterialImpl.hpp"
 #include "TextureImpl.hpp"
+#include "DynamicBufferImpl.hpp"
+
+
 #include "Vela/Graphics/Texture.hpp"
 
 namespace vela::graphics
@@ -22,6 +25,11 @@ namespace vela::graphics
     m_impl(std::make_unique<backend::MaterialImpl>(ctx, description))
     {
 
+    }
+
+    Status Material::setStorageBuffer(uint32_t slot, const DynamicBuffer& buffer)
+    {
+        return m_impl->setStorageBuffer(slot, buffer.impl()->getBuffer(), buffer.impl()->getSize());
     }
 
     const MaterialDescription& Material::getMaterialDescription() const

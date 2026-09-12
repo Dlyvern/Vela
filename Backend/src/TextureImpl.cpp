@@ -11,7 +11,7 @@
 
 namespace vela::backend
 {
-    TextureImpl::TextureImpl(core::Context& context, const graphics::ImageData& image) : m_deletionQueue(&context.impl()->getDeletionQueue())
+    TextureImpl::TextureImpl(core::Context& context, const graphics::ImageData& image, const graphics::SamplerDescription& samplerDescription) : m_deletionQueue(&context.impl()->getDeletionQueue())
     {
         if (image.width == 0 || image.height == 0)
             throw std::runtime_error("Image extent must not be zero");
@@ -211,16 +211,7 @@ namespace vela::backend
         if(VkResult result = vkCreateImageView(m_device, &viewCI, nullptr, &m_imageView); result != VK_SUCCESS)
             throw std::runtime_error("Failed to create image view");
 
-        VkSamplerCreateInfo samplerCI{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
-        samplerCI.magFilter = VK_FILTER_LINEAR;
-        samplerCI.minFilter = VK_FILTER_LINEAR;
-        samplerCI.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerCI.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerCI.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerCI.maxLod = static_cast<float>(image.levels);
-
-        if(VkResult result = vkCreateSampler(m_device, &samplerCI, nullptr, &m_sampler); result != VK_SUCCESS)
-            throw std::runtime_error("Failed to create sampler");
+        m_sampler = context.impl()->getSamplerCache().getSampler(samplerDescription);
     }
 
     VkImageView TextureImpl::getImageView() const
@@ -238,7 +229,6 @@ namespace vela::backend
         if(!m_deletionQueue)
             return;
 
-        m_deletionQueue->push({.image = m_image, .imageView = m_imageView, .sampler = m_sampler,
-            .allocation = m_allocation});
+        m_deletionQueue->push({.image = m_image, .imageView = m_imageView, .allocation = m_allocation});
     }
 } //namespace vela::backend

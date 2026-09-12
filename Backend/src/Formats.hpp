@@ -6,7 +6,7 @@
 #include "Pass.hpp"
 
 #include "Vela/Graphics/RenderTypes.hpp"
-#include "Vela/Graphics/ImageData.hpp"
+#include "Vela/Graphics/Sampler.hpp"
 
 namespace vela::backend
 {

@@ -45,6 +45,8 @@ namespace vela::graphics
 
         Status update(std::span<const std::byte> data);
 
+        size_t getSize() const;
+
         backend::DynamicBufferImpl* impl() const;
 
         ~DynamicBuffer();

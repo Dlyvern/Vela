@@ -373,7 +373,11 @@ namespace little
                 continue;
             }
 
-            auto texture = vela::graphics::Texture::create(context, decoded[index].data());
+            vela::graphics::SamplerDescription samplerDescription{};
+            samplerDescription.anisotropy = 16.0f;
+            samplerDescription.mipMode = vela::graphics::MipMode::Linear;
+
+            auto texture = vela::graphics::Texture::create(context, decoded[index].data(), samplerDescription);
 
             if (!texture)
             {

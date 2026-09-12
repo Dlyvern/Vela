@@ -4,6 +4,8 @@ add_executable(LittleEngine
     src/ImGuiLayer.cpp
     src/FlyCamera.cpp
     src/Camera.cpp
+    src/LitPass.cpp
+    src/ShadowPass.cpp
 )
 
 target_include_directories(LittleEngine PRIVATE include)
@@ -24,4 +26,6 @@ vela_compile_shaders(
         shaders/lit.frag
         shaders/imgui.vert
         shaders/imgui.frag
+        shaders/shadow.vert
+        shaders/shadow.frag
 )

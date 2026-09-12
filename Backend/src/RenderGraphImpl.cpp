@@ -58,14 +58,16 @@ namespace vela::backend
         if(VkResult result = vkAllocateCommandBuffers(m_device, &commandBufferAI, m_commandBuffers.data()); result != VK_SUCCESS)
             throw std::runtime_error("Failed to allocat command buffers");
         
-        std::vector<VkDescriptorPoolSize> poolSizes(1);
+        std::vector<VkDescriptorPoolSize> poolSizes(2);
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         poolSizes[0].descriptorCount = k_framesInFlight;
+        poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        poolSizes[1].descriptorCount = k_framesInFlight * k_passInputSlots;
 
         VkDescriptorPoolCreateInfo descriptorPoolCI{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
         descriptorPoolCI.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         descriptorPoolCI.pPoolSizes = poolSizes.data();
-        descriptorPoolCI.maxSets = k_framesInFlight;
+        descriptorPoolCI.maxSets = k_framesInFlight * 2;
 
         if(VkResult result = vkCreateDescriptorPool(m_device, &descriptorPoolCI, nullptr, &m_descriptorPool); result != VK_SUCCESS)
             throw std::runtime_error("Failed to create descriptor pool");
@@ -81,6 +83,17 @@ namespace vela::backend
 
         if(VkResult result = vkAllocateDescriptorSets(m_device, &descriptorSetAI, m_perViewDescriptorSets.data()); result != VK_SUCCESS)
             throw std::runtime_error("Failed to allocate descriptor sets");
+
+        std::array<VkDescriptorSetLayout, k_framesInFlight> passInputLayouts{};
+        passInputLayouts.fill(context.impl()->getPassInputDescriptorSetLayout());
+
+        VkDescriptorSetAllocateInfo passInputSetAI{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        passInputSetAI.descriptorPool = m_descriptorPool;
+        passInputSetAI.descriptorSetCount = static_cast<uint32_t>(m_passInputDescriptorSets.size());
+        passInputSetAI.pSetLayouts = passInputLayouts.data();
+
+        if(VkResult result = vkAllocateDescriptorSets(m_device, &passInputSetAI, m_passInputDescriptorSets.data()); result != VK_SUCCESS)
+            throw std::runtime_error("Failed to allocate pass input descriptor sets");
 
         VkDeviceSize imageSize = sizeof(CameraUBO);
 
@@ -212,6 +225,45 @@ namespace vela::backend
             return;
 
         vkCmdDraw(m_currentCommandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
+    }
+
+    void RenderGraphImpl::bindAttachment(uint32_t slot, const std::string& attachmentName)
+    {
+        if(!m_isFrameValid || !m_currentRenderGraphPass)
+            return;
+
+        if (slot >= k_passInputSlots)
+        {
+            std::cerr << "Pass input slot " << slot << " is out of range\n";
+            return;
+        }
+
+        const auto attachmentIt = m_attachments.find(attachmentName);
+
+        if (attachmentIt == m_attachments.end())
+        {
+            std::cerr << "Pass referenced unknown attachment " << attachmentName << '\n';
+            return;
+        }
+
+        graphics::SamplerDescription samplerDescription{};
+        samplerDescription.addressU = graphics::AddressMode::ClampToEdge;
+        samplerDescription.addressV = graphics::AddressMode::ClampToEdge;
+        samplerDescription.addressW = graphics::AddressMode::ClampToEdge;
+
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = attachmentIt->second.view;
+        imageInfo.sampler = m_context.impl()->getSamplerCache().getSampler(samplerDescription);
+
+        VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        write.dstSet = m_passInputDescriptorSets[m_frameIndex];
+        write.dstBinding = slot;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.pImageInfo = &imageInfo;
+
+        vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
     }
 
     void RenderGraphImpl::bindMaterialStorageBuffer(uint32_t slot, const std::string& bufferName)
@@ -568,8 +620,18 @@ namespace vela::backend
         const VkExtent2D swapchainExtent = m_context.impl()->getSwapchainExtent();
 
         Attachment attachment{};
-        attachment.extent.width = std::max(1u, static_cast<uint32_t>(swapchainExtent.width * attachmentOutput.scale));
-        attachment.extent.height = std::max(1u, static_cast<uint32_t>(swapchainExtent.height * attachmentOutput.scale));
+
+        if(attachmentOutput.size.width <= 0 && attachmentOutput.size.height <= 0)
+        {
+            attachment.extent.width = std::max(1u, static_cast<uint32_t>(swapchainExtent.width * attachmentOutput.scale));
+            attachment.extent.height = std::max(1u, static_cast<uint32_t>(swapchainExtent.height * attachmentOutput.scale));
+        }
+        else
+        {
+            attachment.extent = attachmentOutput.size;
+            attachment.isFixedSize = true;
+        }
+
         attachment.format = attachmentOutput.format;
 
         VkImageCreateInfo imageCI{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
@@ -1022,9 +1084,9 @@ namespace vela::backend
             imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             imageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             imageBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-            imageBarrier.srcAccessMask = VK_ACCESS_2_NONE;
+            imageBarrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
             imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT;
-            imageBarrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+            imageBarrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT;
             imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
 
             m_attachmentLayouts[colorOutput.name] = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -1061,7 +1123,8 @@ namespace vela::backend
                 imageBarrier.srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
                 imageBarrier.srcStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
                                     | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
-                imageBarrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                imageBarrier.dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+                                    | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
                 imageBarrier.dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT
                                     | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT;
 
@@ -1083,22 +1146,45 @@ namespace vela::backend
 
             const auto& inputAttachment = inputAttachmentIt->second;
 
+            bool isDepth = inputAttachment.format == VK_FORMAT_D32_SFLOAT;
+
             if(input.usage == InputUsage::TransferSource)
             {
-                VkImageMemoryBarrier2 toRead{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-                toRead.oldLayout = m_attachmentLayouts[input.name];
-                toRead.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-                toRead.image = inputAttachment.image;
-                toRead.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-                toRead.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                toRead.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                toRead.srcStageMask  = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-                toRead.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-                toRead.dstStageMask  = VK_PIPELINE_STAGE_2_BLIT_BIT;
-                toRead.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
-                memoryBarriers.push_back(toRead);
+                VkImageMemoryBarrier2 toTransfer{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+                toTransfer.oldLayout = m_attachmentLayouts[input.name];
+                toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                toTransfer.image = inputAttachment.image;
+                toTransfer.subresourceRange = {isDepth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+                toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                toTransfer.srcStageMask  = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+                toTransfer.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+                toTransfer.dstStageMask  = VK_PIPELINE_STAGE_2_BLIT_BIT;
+                toTransfer.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+                memoryBarriers.push_back(toTransfer);
 
                 m_attachmentLayouts[input.name] = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            }
+            else if(input.usage == InputUsage::Sampled)
+            {
+                VkImageMemoryBarrier2 toSampled{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+                toSampled.oldLayout = m_attachmentLayouts[input.name];
+                toSampled.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                toSampled.image = inputAttachment.image;
+                toSampled.subresourceRange = {isDepth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+                toSampled.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                toSampled.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                toSampled.srcStageMask  = isDepth
+                    ? VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT
+                    : VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+                toSampled.srcAccessMask = isDepth
+                    ? VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+                    : VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+                toSampled.dstStageMask  = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT; 
+                toSampled.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
+                memoryBarriers.push_back(toSampled);
+
+                m_attachmentLayouts[input.name] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             }
         }
 
@@ -1164,7 +1250,7 @@ namespace vela::backend
 
         for(auto& [_, attachment] : m_attachments)
         {
-            if(attachment.external)
+            if(attachment.external || attachment.isFixedSize)
                 continue;
 
             deletionQueue.push({.image = attachment.image,
@@ -1212,6 +1298,9 @@ namespace vela::backend
 
         vkCmdBindDescriptorSets(m_currentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
             m_boundPipelineLayout, 0, descriptorSetCount, descriptorSets.data(), 0, nullptr);
+
+        vkCmdBindDescriptorSets(m_currentCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_boundPipelineLayout, k_passInputSet, 1, &m_passInputDescriptorSets[m_frameIndex], 0, nullptr);
 
         m_boundMaterial = materialImpl;
     }

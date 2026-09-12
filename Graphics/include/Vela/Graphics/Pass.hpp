@@ -30,6 +30,9 @@ namespace vela::graphics
         StoreOp store{StoreOp::Store};
         ClearValue clear{};
         float scale{1.0f};
+
+        //Use if you want fixed-size attachment. Note that if attachment has size > 0, it won't be destroyed on swapchain resize
+        Extent2D size{};
     };
 
     struct BufferSlot
@@ -73,6 +76,7 @@ namespace vela::graphics
         void bindVertexBuffer(const DynamicBuffer& buffer);
         void bindIndexBuffer(const DynamicBuffer& buffer);
         void bindStorageBuffer(uint32_t slot, const std::string& bufferName);
+        void bindAttachment(uint32_t slot, const std::string& attachmentName);
         void setConstants(const math::Mat4& value);
         void drawIndexed(uint32_t indexCount, uint32_t firstIndex, int32_t vertexOffset,
                  uint32_t instanceCount = 1, uint32_t firstInstance = 0);

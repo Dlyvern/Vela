@@ -10,6 +10,7 @@
 #include "vk_mem_alloc.h"
 
 #include "Pipeline.hpp"
+#include "SamplerCache.hpp"
 #include "DescriptorPool.hpp"
 #include "DeletionQueue.hpp"
 #include "Features.hpp"
@@ -23,6 +24,9 @@
 
 namespace vela::backend
 {
+    inline constexpr uint32_t k_passInputSet = 2;
+    inline constexpr uint32_t k_passInputSlots = 4;
+
     class ContextImpl
     {
     public:
@@ -42,8 +46,10 @@ namespace vela::backend
         VkSwapchainKHR getSwapchain() const;
 
         LayoutCache& getLayoutCache();
+        SamplerCache& getSamplerCache();
         DescriptorPool& getDescriptorPool();
         VkDescriptorSetLayout getPerViewDescriptorSetLayout() const;
+        VkDescriptorSetLayout getPassInputDescriptorSetLayout() const;
 
         const std::vector<VkImage>& getSwapchainImages() const;
         const std::vector<VkImageView>& getSwapchainImageViews() const;
@@ -100,8 +106,7 @@ namespace vela::backend
 
         VkExtent2D framebufferExtent(const VkSurfaceCapabilitiesKHR& capabilities) const;
 
-        bool checkInstanceExtensions(const std::vector<const char*>& extensions,
-            const std::vector<const char*>& layers);
+        bool checkInstanceExtensions(const std::vector<const char*>& extensions, const std::vector<const char*>& layers);
         bool checkDeviceExtension(VkPhysicalDevice physicalDevice, const std::string& extensionName);
         bool checkValidationLayers(const std::vector<const char*>& requiredLayers);
 
@@ -147,8 +152,10 @@ namespace vela::backend
         bool m_memoryBudgetEnabled{false};
 
         std::optional<LayoutCache> m_layoutCache;
+        std::optional<SamplerCache> m_samplerCache;
         std::optional<DescriptorPool> m_descriptorPool;
         VkDescriptorSetLayout m_perViewDescriptorSetLayout{VK_NULL_HANDLE};
+        VkDescriptorSetLayout m_passInputDescriptorSetLayout{VK_NULL_HANDLE};
     };
 
 } // namespace vela::backend

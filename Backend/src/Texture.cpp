@@ -5,11 +5,11 @@
 
 namespace vela::graphics
 {
-    Result<Texture> Texture::create(core::Context& ctx, const ImageData& image)
+    Result<Texture> Texture::create(core::Context& ctx, const ImageData& image, const SamplerDescription& samplerDescription)
     {
         try
         {
-            return Texture(ctx, image);
+            return Texture(ctx, image, samplerDescription);
         }
         catch (const std::exception& error)
         {
@@ -17,8 +17,8 @@ namespace vela::graphics
         }
     }
 
-    Texture::Texture(core::Context& ctx, const ImageData& image) :
-    m_impl(std::make_unique<backend::TextureImpl>(ctx, image))
+    Texture::Texture(core::Context& ctx, const ImageData& image, const SamplerDescription& samplerDescription) :
+    m_impl(std::make_unique<backend::TextureImpl>(ctx, image, samplerDescription))
     {
          
     }

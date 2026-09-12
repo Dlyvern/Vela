@@ -111,7 +111,8 @@ namespace vela::backend
         }
 
         m_pipelineLayout = context.impl()->getLayoutCache().getPipelineLayout(
-            {context.impl()->getPerViewDescriptorSetLayout(), m_descriptorSetLayout}, pushConstantRanges);
+            {context.impl()->getPerViewDescriptorSetLayout(), m_descriptorSetLayout,
+             context.impl()->getPassInputDescriptorSetLayout()}, pushConstantRanges);
 
         m_pipelineDescription.vertexShader = m_vertexShader;
         m_pipelineDescription.fragmentShader = m_fragmentShader;

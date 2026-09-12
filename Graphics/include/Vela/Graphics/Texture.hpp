@@ -3,7 +3,9 @@
 
 #include <memory>
 
-#include "Vela/Graphics/ImageData.hpp"
+#include "ImageData.hpp"
+#include "Sampler.hpp"
+
 #include "Vela/Result.hpp"
 
 namespace vela::core
@@ -21,7 +23,7 @@ namespace vela::graphics
     class Texture
     {
     public:
-        static Result<Texture> create(core::Context& ctx, const ImageData& image);
+        static Result<Texture> create(core::Context& ctx, const ImageData& image, const SamplerDescription& samplerDescription = {});
 
         ~Texture();
         
@@ -33,7 +35,7 @@ namespace vela::graphics
 
         backend::TextureImpl* impl() const;
     private:
-        Texture(core::Context& ctx, const ImageData& image);
+        Texture(core::Context& ctx, const ImageData& image, const SamplerDescription& samplerDescription);
 
         std::unique_ptr<backend::TextureImpl> m_impl{nullptr};
     };

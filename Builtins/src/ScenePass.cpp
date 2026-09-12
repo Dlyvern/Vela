@@ -32,9 +32,6 @@ namespace vela::builtins
     void ScenePass::record(graphics::PassRecorder& recorder)
     {
         for(const auto& submission : m_renderScene->submissions())
-        {
             recorder.draw(*submission.mesh, *submission.material, submission.model);
-        }
-    
     }
 } //namespace vela::builtins

@@ -31,6 +31,7 @@ namespace vela::backend
         VkBuffer getBuffer() const;
 
         VkIndexType getIndexType() const;
+        size_t getSize() const;
 
         ~DynamicBufferImpl();
 

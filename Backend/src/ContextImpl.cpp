@@ -77,6 +77,7 @@ namespace vela::backend
 
             m_descriptorPool.reset();
             m_layoutCache.reset();
+            m_samplerCache.reset();
 
             vkDestroyDevice(m_device, nullptr);
         }
@@ -764,6 +765,7 @@ namespace vela::backend
         vkGetDeviceQueue(m_device, m_queueFamilyIndices.transfer.value(), 0, &m_transferQueue);
 
         m_layoutCache.emplace(m_device);
+        m_samplerCache.emplace(m_device, m_deviceInfo);
         m_descriptorPool.emplace(m_device);
 
         VkDescriptorSetLayoutBinding perViewBinding{};
@@ -773,6 +775,23 @@ namespace vela::backend
         perViewBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
         m_perViewDescriptorSetLayout = m_layoutCache->getDescriptorSetLayout({perViewBinding});
+
+        std::vector<VkDescriptorSetLayoutBinding> passInputBindings(k_passInputSlots);
+
+        for (uint32_t slot = 0; slot < k_passInputSlots; ++slot)
+        {
+            passInputBindings[slot].binding = slot;
+            passInputBindings[slot].descriptorCount = 1;
+            passInputBindings[slot].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            passInputBindings[slot].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        }
+
+        m_passInputDescriptorSetLayout = m_layoutCache->getDescriptorSetLayout(passInputBindings);
+    }
+
+    SamplerCache& ContextImpl::getSamplerCache()
+    {
+        return *m_samplerCache;
     }
 
     LayoutCache& ContextImpl::getLayoutCache()
@@ -788,6 +807,11 @@ namespace vela::backend
     VkDescriptorSetLayout ContextImpl::getPerViewDescriptorSetLayout() const
     {
         return m_perViewDescriptorSetLayout;
+    }
+
+    VkDescriptorSetLayout ContextImpl::getPassInputDescriptorSetLayout() const
+    {
+        return m_passInputDescriptorSetLayout;
     }
 
     VkExtent2D ContextImpl::getSwapchainExtent() const

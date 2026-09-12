@@ -31,6 +31,11 @@ namespace vela::graphics
         return m_impl.get();
     }
 
+    size_t DynamicBuffer::getSize() const
+    {
+        return m_impl->getSize();
+    }
+
     Status DynamicBuffer::update(std::span<const std::byte> data)
     {
         return m_impl->update(data);

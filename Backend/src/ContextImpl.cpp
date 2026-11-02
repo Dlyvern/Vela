@@ -695,6 +695,18 @@ namespace vela::backend
         swapchainInfo.imageCount = static_cast<uint32_t>(m_swapchainImages.size());
         swapchainInfo.width = m_swapchainExtent.width;
         swapchainInfo.height = m_swapchainExtent.height;
+
+        switch (m_swapchainFormat)
+        {
+            case VK_FORMAT_B8G8R8A8_SRGB:
+            case VK_FORMAT_R8G8B8A8_SRGB:
+            case VK_FORMAT_A8B8G8R8_SRGB_PACK32:
+                swapchainInfo.srgb = true;
+                break;
+            default:
+                swapchainInfo.srgb = false;
+                break;
+        }
         swapchainInfo.requestedVSync = m_contextPreferences.preferredVSync;
         swapchainInfo.actualVSync = toVSync(m_swapchainPresentMode);
 
@@ -772,7 +784,7 @@ namespace vela::backend
         perViewBinding.binding = 0;
         perViewBinding.descriptorCount = 1;
         perViewBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        perViewBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        perViewBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
         m_perViewDescriptorSetLayout = m_layoutCache->getDescriptorSetLayout({perViewBinding});
 

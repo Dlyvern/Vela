@@ -12,8 +12,8 @@ add_library(Vela::Backend ALIAS VelaBackend)
 
 target_include_directories(VelaBackend PRIVATE
         ${SRC_DIR}
-        ${CMAKE_SOURCE_DIR}/Core/include
-        ${CMAKE_SOURCE_DIR}/Graphics/include
+        ${PROJECT_SOURCE_DIR}/Core/include
+        ${PROJECT_SOURCE_DIR}/Graphics/include
 )
 
 target_link_libraries(VelaBackend

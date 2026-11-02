@@ -29,7 +29,7 @@ namespace vela::graphics
 
     Status Material::setStorageBuffer(uint32_t slot, const DynamicBuffer& buffer)
     {
-        return m_impl->setStorageBuffer(slot, buffer.impl()->getBuffer(), buffer.impl()->getSize());
+        return m_impl->setStorageBuffer(slot, *buffer.impl());
     }
 
     const MaterialDescription& Material::getMaterialDescription() const

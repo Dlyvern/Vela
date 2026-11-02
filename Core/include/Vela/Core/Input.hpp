@@ -96,7 +96,8 @@ namespace vela::core
     {
         Normal = 0,
         Hidden,
-        Locked
+        Locked,   // visible, confined to the window
+        Disabled  // hidden and unbounded, for mouse-look. Read movement as cursor position deltas
     };
 
     struct KeyModifiers

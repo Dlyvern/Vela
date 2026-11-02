@@ -410,6 +410,7 @@ namespace
             case vela::core::CursorMode::Normal: return GLFW_CURSOR_NORMAL;
             case vela::core::CursorMode::Hidden: return GLFW_CURSOR_HIDDEN;
             case vela::core::CursorMode::Locked: return GLFW_CURSOR_CAPTURED;
+            case vela::core::CursorMode::Disabled: return GLFW_CURSOR_DISABLED;
         }
 
         return -1;

@@ -46,6 +46,8 @@ namespace vela::backend
     {
         if(entry.sampler)
             vkDestroySampler(m_device, entry.sampler, nullptr);
+        if(entry.semaphore)
+            vkDestroySemaphore(m_device, entry.semaphore, nullptr);
         if(entry.imageView)
             vkDestroyImageView(m_device, entry.imageView, nullptr);
         if(entry.image)

@@ -74,6 +74,9 @@ namespace vela::core
         uint32_t height{0};
         VSync requestedVSync{VSync::On};
         VSync actualVSync{VSync::On};
+
+        // True when presenting encodes linear color to sRGB. When false, the present source must already hold sRGB-encoded values
+        bool srgb{false};
     };
 
     constexpr const char* toString(DeviceType type)

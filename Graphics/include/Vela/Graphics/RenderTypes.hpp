@@ -13,7 +13,16 @@ namespace vela::graphics
         RGBA16Float,
         Depth32Float,
         BC7Srgb,
-        BC7Unorm
+        BC7Unorm,
+        R8Unorm,
+        RG8Unorm,
+        RGBA32Float,
+        BC1Srgb,
+        BC1Unorm,
+        BC3Srgb,
+        BC3Unorm,
+        BC4Unorm,
+        BC5Unorm
     };
 
     enum class LoadOp : uint8_t  
@@ -93,12 +102,21 @@ namespace vela::graphics
     {
         switch (format)
         {
+            case TextureFormat::BC1Srgb:
+            case TextureFormat::BC1Unorm:
+            case TextureFormat::BC3Srgb:
+            case TextureFormat::BC3Unorm:
+            case TextureFormat::BC4Unorm:
+            case TextureFormat::BC5Unorm:
             case TextureFormat::BC7Srgb:
             case TextureFormat::BC7Unorm: return true;
 
             case TextureFormat::RGBA8Srgb:
             case TextureFormat::RGBA8Unorm:
             case TextureFormat::RGBA16Float:
+            case TextureFormat::RGBA32Float:
+            case TextureFormat::R8Unorm:
+            case TextureFormat::RG8Unorm:
             case TextureFormat::Depth32Float: return false;
         }
 
@@ -109,12 +127,22 @@ namespace vela::graphics
     {
         switch (format)
         {
+            case TextureFormat::BC1Srgb:
+            case TextureFormat::BC1Unorm:
+            case TextureFormat::BC4Unorm: return 8;
+
+            case TextureFormat::BC3Srgb:
+            case TextureFormat::BC3Unorm:
+            case TextureFormat::BC5Unorm:
             case TextureFormat::BC7Srgb:
             case TextureFormat::BC7Unorm: return 16;
 
             case TextureFormat::RGBA8Srgb:
             case TextureFormat::RGBA8Unorm:
             case TextureFormat::RGBA16Float:
+            case TextureFormat::RGBA32Float:
+            case TextureFormat::R8Unorm:
+            case TextureFormat::RG8Unorm:
             case TextureFormat::Depth32Float: return 0;
         }
 
@@ -125,10 +153,19 @@ namespace vela::graphics
     {
         switch (format)
         {
+            case TextureFormat::R8Unorm:      return 1;
+            case TextureFormat::RG8Unorm:     return 2;
             case TextureFormat::RGBA8Srgb:
             case TextureFormat::RGBA8Unorm:   return 4;
             case TextureFormat::RGBA16Float:  return 8;
+            case TextureFormat::RGBA32Float:  return 16;
             case TextureFormat::Depth32Float: return 4;
+            case TextureFormat::BC1Srgb:
+            case TextureFormat::BC1Unorm:
+            case TextureFormat::BC3Srgb:
+            case TextureFormat::BC3Unorm:
+            case TextureFormat::BC4Unorm:
+            case TextureFormat::BC5Unorm:
             case TextureFormat::BC7Srgb:
             case TextureFormat::BC7Unorm: return 0;
         }
@@ -162,6 +199,8 @@ namespace vela::graphics
     static_assert(imageSizeBytes(TextureFormat::BC7Srgb, 1, 1) == 16);
     static_assert(imageSizeBytes(TextureFormat::BC7Srgb, 2048, 2048) == 4194304);
     static_assert(imageSizeBytes(TextureFormat::RGBA8Srgb, 16, 16) == 1024);
+    static_assert(imageSizeBytes(TextureFormat::BC1Srgb, 4, 4) == 8);
+    static_assert(imageSizeBytes(TextureFormat::RG8Unorm, 4, 4) == 32);
 
 } //namespace vela::graphics
 

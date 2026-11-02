@@ -30,7 +30,15 @@ namespace vela::graphics
         if (!m_graph)
             return;
 
-        m_graph->draw(mesh, material, model);
+        m_graph->draw(mesh, material, &model, sizeof(math::Mat4));
+    }
+
+    void PassRecorder::drawWithConstants(const Mesh& mesh, const Material& material, const void* constants, uint32_t size)
+    {
+        if (!m_graph || constants == nullptr)
+            return;
+
+        m_graph->draw(mesh, material, constants, size);
     }
 
     void PassRecorder::bind(const Material& material)
@@ -90,8 +98,27 @@ namespace vela::graphics
         m_graph->setConstants(value);
     }
 
+    void PassRecorder::bindTexture(uint32_t slot, const Texture& texture)
+    {
+        if(!m_graph)
+            return;
+
+        m_graph->bindTexture(slot, texture);
+    }
+
+    void PassRecorder::setConstantBytes(const void* data, uint32_t size)
+    {
+        if (!m_graph)
+            return;
+
+        m_graph->setConstantBytes(data, size);
+    }
+
     void PassRecorder::setScissor(int32_t x, int32_t y, uint32_t width, uint32_t height)
     {
+        if (!m_graph)
+            return;
+
         m_graph->setScissor(x, y, width, height);
     }
 

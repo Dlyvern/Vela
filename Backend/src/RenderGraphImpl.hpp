@@ -7,6 +7,7 @@
 #include "Pipeline.hpp"
 #include "Pass.hpp"
 #include "FrameConstants.hpp"
+#include "ContextImpl.hpp"
 
 #include "Vela/Result.hpp"
 #include "Vela/Math/Matrix.hpp"
@@ -34,6 +35,7 @@ namespace vela::graphics
     class Mesh;
     class ComputePass;
     class ComputeProgram;
+    class Texture;
 } //namespace vela::graphics
 
 namespace vela::backend
@@ -48,10 +50,12 @@ namespace vela::backend
 
         Status execute();
 
-        void draw(const graphics::Mesh& mesh, const graphics::Material& material, const math::Mat4& model);
+        void draw(const graphics::Mesh& mesh, const graphics::Material& material, const void* constants, uint32_t size);
         void bind(const graphics::Material& material);
         void bindVertexBuffer(const graphics::DynamicBuffer& buffer);
         void bindAttachment(uint32_t slot, const std::string& attachmentName);
+        void bindTexture(uint32_t slot, const graphics::Texture& texture);
+        void setConstantBytes(const void* data, uint32_t size);
         void bindIndexBuffer(const graphics::DynamicBuffer& buffer);
         void setConstants(const math::Mat4& value);
         void bindMaterialStorageBuffer(uint32_t slot, const std::string& bufferName);
@@ -98,7 +102,17 @@ namespace vela::backend
         // Execution order is the vector order; the map is lookup by name only.
         std::vector<RegisteredPass> m_renderGraphPasses;
         std::unordered_map<std::string, size_t> m_renderGraphPassIndices;
-        std::unordered_map<std::string, VkImageLayout> m_attachmentLayouts;
+        struct AttachmentState
+        {
+            VkImageLayout layout{VK_IMAGE_LAYOUT_UNDEFINED};
+            VkPipelineStageFlags2 stage{VK_PIPELINE_STAGE_2_NONE};
+            VkAccessFlags2 access{VK_ACCESS_2_NONE};
+        };
+
+        std::unordered_map<std::string, AttachmentState> m_attachmentStates;
+
+        void transitionAttachment(const std::string& name, VkImageLayout newLayout, VkPipelineStageFlags2 dstStage,
+            VkAccessFlags2 dstAccess, std::vector<VkImageMemoryBarrier2>& barriers);
         std::vector<size_t> m_executionOrder;
         std::unordered_map<std::string, std::vector<size_t>> m_attachmentProducers;
 
@@ -132,7 +146,8 @@ namespace vela::backend
         void createSwapchainSyncObjects();
         void destroySwapchainSyncObjects();
         void recreateSwapchainResources();
-        void destroyAllAttachments();
+        // Fixed-size attachments don't depend on the swapchain, so a resize keeps them
+        void destroyAllAttachments(bool keepFixedSize = false);
         void resetAllAttachmentLayouts();
 
         core::Context& m_context;
@@ -169,7 +184,31 @@ namespace vela::backend
 
         VkDescriptorPool m_descriptorPool{VK_NULL_HANDLE};
         std::array<VkDescriptorSet, k_framesInFlight> m_perViewDescriptorSets;
-        std::array<VkDescriptorSet, k_framesInFlight> m_passInputDescriptorSets{VK_NULL_HANDLE};
+
+        /*
+            Pass-input slots (set 2) are written into a fresh transient set whenever they change between draws,
+            so a set is never updated after the command buffer has bound it. Transient pools are reset once
+            the frame that used them has retired
+        */
+        struct InputBinding
+        {
+            VkImageView view{VK_NULL_HANDLE};
+            VkSampler sampler{VK_NULL_HANDLE};
+        };
+
+        std::array<InputBinding, k_passInputSlots> m_inputBindings{};
+        VkDescriptorSet m_currentInputSet{VK_NULL_HANDLE};
+        bool m_inputBindingsDirty{false};
+
+        // Sets 0 and 1 are bound lazily, right before a draw, so storage buffers bound after bind() still land
+        bool m_materialSetsDirty{false};
+
+        std::array<std::vector<VkDescriptorPool>, k_framesInFlight> m_transientPools;
+        std::array<size_t, k_framesInFlight> m_transientPoolCursor{};
+
+        VkDescriptorPool createTransientPool();
+        VkDescriptorSet allocateTransientSet(VkDescriptorSetLayout layout);
+        void flushDescriptors();
         std::array<VkBuffer, k_framesInFlight> m_perViewBuffer{VK_NULL_HANDLE};
         std::array<VmaAllocation, k_framesInFlight> m_perViewBufferAllocation{VK_NULL_HANDLE};
         std::array<void*, k_framesInFlight> m_perViewMapped{nullptr};

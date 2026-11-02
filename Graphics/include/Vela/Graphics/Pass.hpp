@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <optional>
+#include <type_traits>
 
 namespace vela::backend
 {
@@ -22,6 +23,8 @@ namespace vela::backend
 
 namespace vela::graphics
 {
+    class Texture;
+
     struct AttachmentSlot
     {
         std::string name;
@@ -72,12 +75,37 @@ namespace vela::graphics
     {
     public:
         void draw(const Mesh& mesh, const Material& material, const math::Mat4& model);
+
+        // Same as draw(), but pushes a whole constants block instead of only a model matrix
+        void drawWithConstants(const Mesh& mesh, const Material& material, const void* constants, uint32_t size);
+
+        template<typename T> requires (std::is_trivially_copyable_v<T> && !std::is_same_v<T, math::Mat4>)
+        void draw(const Mesh& mesh, const Material& material, const T& constants)
+        {
+            drawWithConstants(mesh, material, &constants, static_cast<uint32_t>(sizeof(T)));
+        }
         void bind(const Material& material);
         void bindVertexBuffer(const DynamicBuffer& buffer);
         void bindIndexBuffer(const DynamicBuffer& buffer);
         void bindStorageBuffer(uint32_t slot, const std::string& bufferName);
+
+        /*
+            Pass-input slots (set 2). Each draw sees the slots as they were when it was recorded,
+            so binding a different texture between draws is fine - e.g. one texture per ImGui command.
+            bindAttachment only works for attachments the pass lists in its inputs.
+        */
         void bindAttachment(uint32_t slot, const std::string& attachmentName);
+        void bindTexture(uint32_t slot, const Texture& texture);
+
         void setConstants(const math::Mat4& value);
+        void setConstantBytes(const void* data, uint32_t size);
+
+        template<typename T> requires std::is_trivially_copyable_v<T>
+        void setConstants(const T& value)
+        {
+            setConstantBytes(&value, static_cast<uint32_t>(sizeof(T)));
+        }
+
         void drawIndexed(uint32_t indexCount, uint32_t firstIndex, int32_t vertexOffset,
                  uint32_t instanceCount = 1, uint32_t firstInstance = 0);
         void drawInstanced(uint32_t vertexCount, uint32_t instanceCount,

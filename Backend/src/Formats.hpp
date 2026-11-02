@@ -108,6 +108,15 @@ namespace vela::backend
             case graphics::TextureFormat::Depth32Float: return VK_FORMAT_D32_SFLOAT;
             case graphics::TextureFormat::BC7Srgb: return VK_FORMAT_BC7_SRGB_BLOCK;
             case graphics::TextureFormat::BC7Unorm: return VK_FORMAT_BC7_UNORM_BLOCK;
+            case graphics::TextureFormat::R8Unorm: return VK_FORMAT_R8_UNORM;
+            case graphics::TextureFormat::RG8Unorm: return VK_FORMAT_R8G8_UNORM;
+            case graphics::TextureFormat::RGBA32Float: return VK_FORMAT_R32G32B32A32_SFLOAT;
+            case graphics::TextureFormat::BC1Srgb: return VK_FORMAT_BC1_RGBA_SRGB_BLOCK;
+            case graphics::TextureFormat::BC1Unorm: return VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
+            case graphics::TextureFormat::BC3Srgb: return VK_FORMAT_BC3_SRGB_BLOCK;
+            case graphics::TextureFormat::BC3Unorm: return VK_FORMAT_BC3_UNORM_BLOCK;
+            case graphics::TextureFormat::BC4Unorm: return VK_FORMAT_BC4_UNORM_BLOCK;
+            case graphics::TextureFormat::BC5Unorm: return VK_FORMAT_BC5_UNORM_BLOCK;
         }
 
         return VK_FORMAT_UNDEFINED;

@@ -2,6 +2,7 @@
 #include "Vela/Core/Context.hpp"
 #include "ContextImpl.hpp"
 #include "SpirvReflect.hpp"
+#include "DynamicBufferImpl.hpp"
 
 #include <algorithm>
 #include <map>
@@ -32,8 +33,6 @@ namespace vela::backend
 
         m_materialDescription.vertexShader = m_vertexShader;
         m_materialDescription.fragmentShader = m_fragmentShader;
-
-        m_textureCount = reflectTextureCount(m_vertexShader, m_fragmentShader);
 
         m_allocator = context.impl()->getAllocator();
 
@@ -83,7 +82,8 @@ namespace vela::backend
         if(!bindings.empty())
         {
             m_descriptorPool = &context.impl()->getDescriptorPool();
-            m_descriptorSet = m_descriptorPool->allocate(m_descriptorSetLayout);
+            for (DescriptorSetAllocation& descriptorSet : m_descriptorSets)
+                descriptorSet = m_descriptorPool->allocate(m_descriptorSetLayout);
         }
 
         const uint32_t vertexPushConstantSize = reflectPushConstantSize(m_vertexShader);
@@ -150,23 +150,16 @@ namespace vela::backend
 
     Status MaterialImpl::setTexture(uint32_t slot, VkImageView imageView, VkSampler sampler)
     {
-        if(slot >= m_textureCount)
-            return Error{ErrorCode::InvalidArgument, "Texture slot " + std::to_string(slot)
-                + " is out of range for a material declaring " + std::to_string(m_textureCount) + " textures"};
+        const auto kind = m_bindingKinds.find(slot);
 
-        VkDescriptorImageInfo imageInfo{};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = imageView;
-        imageInfo.sampler = sampler;
+        if (kind == m_bindingKinds.end() || kind->second != DescriptorKind::CombinedImageSampler)
+            return Error{ErrorCode::InvalidArgument, "Material has no texture at slot " + std::to_string(slot)};
 
-        VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-        write.dstSet = m_descriptorSet.set;
-        write.dstBinding = slot;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.descriptorCount = 1;
-        write.pImageInfo = &imageInfo;
+        Binding binding{};
+        binding.imageView = imageView;
+        binding.sampler = sampler;
 
-        vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
+        m_bindings[slot] = binding;
 
         return {};
     }
@@ -179,27 +172,103 @@ namespace vela::backend
             return Error{ErrorCode::InvalidArgument, "Material has no storage buffer at slot "
                 + std::to_string(slot)};
 
-        if (const auto bound = m_boundStorageBuffers.find(slot);
-            bound != m_boundStorageBuffers.end() && bound->second == buffer)
-            return {};
+        Binding binding{};
+        binding.buffer = buffer;
+        binding.size = size;
 
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = buffer;
-        bufferInfo.offset = 0;
-        bufferInfo.range = size;
-
-        VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-        write.dstSet = m_descriptorSet.set;
-        write.dstBinding = slot;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        write.descriptorCount = 1;
-        write.pBufferInfo = &bufferInfo;
-
-        vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
-
-        m_boundStorageBuffers[slot] = buffer;
+        m_bindings[slot] = binding;
 
         return {};
+    }
+
+    Status MaterialImpl::setStorageBuffer(uint32_t slot, const DynamicBufferImpl& buffer)
+    {
+        const auto kind = m_bindingKinds.find(slot);
+
+        if (kind == m_bindingKinds.end() || kind->second != DescriptorKind::StorageBuffer)
+            return Error{ErrorCode::InvalidArgument, "Material has no storage buffer at slot "
+                + std::to_string(slot)};
+
+        Binding binding{};
+        binding.dynamicBuffer = &buffer;
+
+        m_bindings[slot] = binding;
+
+        return {};
+    }
+
+    MaterialImpl::Binding MaterialImpl::resolve(const Binding& binding) const
+    {
+        if (binding.dynamicBuffer == nullptr)
+            return binding;
+
+        Binding resolved = binding;
+        resolved.buffer = binding.dynamicBuffer->getBuffer();
+        resolved.size = binding.dynamicBuffer->getSize();
+
+        return resolved;
+    }
+
+    VkDescriptorSet MaterialImpl::getDescriptorSet(uint32_t frameIndex)
+    {
+        const VkDescriptorSet set = m_descriptorSets[frameIndex].set;
+
+        if (set == VK_NULL_HANDLE)
+            return VK_NULL_HANDLE;
+
+        std::unordered_map<uint32_t, Binding>& written = m_writtenBindings[frameIndex];
+
+        std::vector<VkDescriptorImageInfo> imageInfos;
+        std::vector<VkDescriptorBufferInfo> bufferInfos;
+        std::vector<VkWriteDescriptorSet> writes;
+
+        imageInfos.reserve(m_bindings.size());
+        bufferInfos.reserve(m_bindings.size());
+
+        for (const auto& [slot, desired] : m_bindings)
+        {
+            const Binding binding = resolve(desired);
+
+            if (const auto it = written.find(slot); it != written.end() && it->second == binding)
+                continue;
+
+            VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            write.dstSet = set;
+            write.dstBinding = slot;
+            write.descriptorCount = 1;
+
+            if (binding.imageView != VK_NULL_HANDLE)
+            {
+                VkDescriptorImageInfo& imageInfo = imageInfos.emplace_back();
+                imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                imageInfo.imageView = binding.imageView;
+                imageInfo.sampler = binding.sampler;
+
+                write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                write.pImageInfo = &imageInfo;
+            }
+            else
+            {
+                if (binding.buffer == VK_NULL_HANDLE)
+                    continue;
+
+                VkDescriptorBufferInfo& bufferInfo = bufferInfos.emplace_back();
+                bufferInfo.buffer = binding.buffer;
+                bufferInfo.offset = 0;
+                bufferInfo.range = binding.size;
+
+                write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                write.pBufferInfo = &bufferInfo;
+            }
+
+            writes.push_back(write);
+            written[slot] = binding;
+        }
+
+        if (!writes.empty())
+            vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+
+        return set;
     }
 
     const graphics::MaterialDescription& MaterialImpl::getMaterialDescription() const
@@ -209,13 +278,12 @@ namespace vela::backend
 
     MaterialImpl::~MaterialImpl()
     {
-        if(m_deletionQueue)
-            m_deletionQueue->push({.descriptorSet = m_descriptorSet});
-    }
+        if(!m_deletionQueue)
+            return;
 
-    VkDescriptorSet MaterialImpl::getDescriptorSet() const
-    {
-        return m_descriptorSet.set;
+        for (const DescriptorSetAllocation& descriptorSet : m_descriptorSets)
+            if (descriptorSet.set != VK_NULL_HANDLE)
+                m_deletionQueue->push({.descriptorSet = descriptorSet});
     }
 
     VkPipelineLayout MaterialImpl::getPipelineLayout() const

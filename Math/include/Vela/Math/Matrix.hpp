@@ -1,10 +1,13 @@
 #ifndef VELA_MATH_MATRIX_HPP
 #define VELA_MATH_MATRIX_HPP
 
+#include "Vector.hpp"
+
 #include <cstddef>
 
 namespace vela::math
 {
+    // Column-major, m[column * 4 + row]. Same memory layout as GLSL mat4
     class Mat4
     {
     public:
@@ -21,6 +24,16 @@ namespace vela::math
             m[15] = diagonal;
         }
 
+        constexpr Mat4(const Vector4<float>& column0, const Vector4<float>& column1,
+                       const Vector4<float>& column2, const Vector4<float>& column3) noexcept
+            : m{}
+        {
+            setColumn(0, column0);
+            setColumn(1, column1);
+            setColumn(2, column2);
+            setColumn(3, column3);
+        }
+
         constexpr float* data() noexcept
         {
             return m;
@@ -29,6 +42,20 @@ namespace vela::math
         constexpr const float* data() const noexcept
         {
             return m;
+        }
+
+        [[nodiscard]]
+        constexpr Vector4<float> getColumn(std::size_t column) const noexcept
+        {
+            return {m[column * 4 + 0], m[column * 4 + 1], m[column * 4 + 2], m[column * 4 + 3]};
+        }
+
+        constexpr void setColumn(std::size_t column, const Vector4<float>& value) noexcept
+        {
+            m[column * 4 + 0] = value.x;
+            m[column * 4 + 1] = value.y;
+            m[column * 4 + 2] = value.z;
+            m[column * 4 + 3] = value.w;
         }
 
         constexpr Mat4 operator*(const Mat4& other) const noexcept
@@ -45,6 +72,22 @@ namespace vela::math
                         (*this)[2][row] * other[column][2] +
                         (*this)[3][row] * other[column][3];
                 }
+            }
+
+            return result;
+        }
+
+        constexpr Vector4<float> operator*(const Vector4<float>& vector) const noexcept
+        {
+            Vector4<float> result;
+
+            for (std::size_t row = 0; row < 4; ++row)
+            {
+                result[row] =
+                    (*this)[0][row] * vector.x +
+                    (*this)[1][row] * vector.y +
+                    (*this)[2][row] * vector.z +
+                    (*this)[3][row] * vector.w;
             }
 
             return result;
@@ -87,7 +130,7 @@ namespace vela::math
     private:
         float m[16];
     };
-    
+
 } //namespace vela::math
 
 #endif //VELA_MATH_MATRIX_HPP

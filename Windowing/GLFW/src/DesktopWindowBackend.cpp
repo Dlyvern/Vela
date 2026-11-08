@@ -744,6 +744,9 @@ namespace vela::windowing
         if (window == nullptr)
             throw std::runtime_error("Failed to create window");
 
+        if (!windowPreferences.closeOnRequest)
+            m_vetoedCloseWindows.insert(window);
+
         WindowedRect rect;
         rect.width = windowPreferences.width;
         rect.height = windowPreferences.height;
@@ -883,6 +886,10 @@ namespace vela::windowing
             event.type = core::EventType::CloseRequested;
 
             windowBackend->m_events[static_cast<void*>(window)].push_back(event);
+
+            // GLFW has already flagged the window; undo that and leave the decision to close()
+            if (windowBackend->m_vetoedCloseWindows.contains(window))
+                glfwSetWindowShouldClose(window, GLFW_FALSE);
         });
         
         //Gamepad
@@ -1043,6 +1050,7 @@ namespace vela::windowing
 
         m_windowedRects.erase(window);
         m_events.erase(window);
+        m_vetoedCloseWindows.erase(window);
 
         glfwDestroyWindow(glfwWindow);
     }

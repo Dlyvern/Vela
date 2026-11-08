@@ -31,6 +31,10 @@ namespace vela::core
         WindowMode mode{WindowMode::Windowed};
         uint32_t monitorIndex{0};
         bool resizable{true};
+
+        // False: the close button only sends EventType::CloseRequested and the window stays open until close().
+        // Lets the application ask first, e.g. about unsaved changes
+        bool closeOnRequest{true};
     };
 } //namespace vela::core
 

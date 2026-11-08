@@ -6,6 +6,7 @@
 
 #include <array>
 #include <unordered_map>
+#include <unordered_set>
 
 struct GLFWcursor;
 
@@ -64,6 +65,7 @@ namespace vela::windowing
 
         std::unordered_map<void*, WindowedRect> m_windowedRects;
         std::unordered_map<void*, std::vector<core::Event>> m_events;
+        std::unordered_set<void*> m_vetoedCloseWindows;
         std::unordered_map<core::CursorShape, GLFWcursor*> m_cursors;
 
         struct GamepadState

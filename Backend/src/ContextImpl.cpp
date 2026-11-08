@@ -447,64 +447,101 @@ namespace vela::backend
 
         const VkPhysicalDeviceType preferredType = gpuTypeToVk(m_contextPreferences.preferredGpu);
 
-        VkPhysicalDevice fallbackDevice{VK_NULL_HANDLE};
-        VkPhysicalDeviceProperties fallbackProperties{};
-        QueueFamilyIndices fallbackIndices;
+        // The preferred type wins; otherwise real GPUs beat virtual ones, which beat software rasterizers
+        auto rankDevice = [preferredType](VkPhysicalDeviceType type)
+        {
+            if (type == preferredType)
+                return 5;
+
+            switch (type)
+            {
+                case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:   return 4;
+                case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: return 3;
+                case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:    return 2;
+                case VK_PHYSICAL_DEVICE_TYPE_CPU:            return 1;
+                default:                                     return 0;
+            }
+        };
+
+        auto deviceTypeName = [](VkPhysicalDeviceType type)
+        {
+            switch (type)
+            {
+                case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:   return "discrete";
+                case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: return "integrated";
+                case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:    return "virtual";
+                case VK_PHYSICAL_DEVICE_TYPE_CPU:            return "cpu";
+                default:                                     return "other";
+            }
+        };
+
+        VkPhysicalDevice bestDevice{VK_NULL_HANDLE};
+        VkPhysicalDeviceProperties bestProperties{};
+        QueueFamilyIndices bestIndices;
+        int bestRank{-1};
+
+        std::cout << "Vulkan devices:\n";
 
         for(const auto& physicalDevice : physicalDevices)
         {
             VkPhysicalDeviceProperties physicalDeviceProperties{};
             vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
 
+            std::cout << "  " << physicalDeviceProperties.deviceName << " (" << deviceTypeName(physicalDeviceProperties.deviceType) << ')';
+
             if(!checkQueueFamilyProperties(physicalDevice))
+            {
+                std::cout << " - skipped: no graphics/present queue for this surface\n";
                 continue;
+            }
 
             if(!supportsRequiredFeatures(physicalDevice))
+            {
+                std::cout << " - skipped: missing a required feature\n";
                 continue;
-
-            if(physicalDeviceProperties.deviceType == preferredType)
-            {
-                m_physicalDevice = physicalDevice;
-                break;
             }
 
-            if(fallbackDevice == VK_NULL_HANDLE)
+            std::cout << '\n';
+
+            // Ties keep the driver's enumeration order
+            const int rank = rankDevice(physicalDeviceProperties.deviceType);
+
+            if(rank > bestRank)
             {
-                fallbackDevice = physicalDevice;
-                fallbackProperties = physicalDeviceProperties;
-                fallbackIndices = m_queueFamilyIndices;
+                bestDevice = physicalDevice;
+                bestProperties = physicalDeviceProperties;
+                bestIndices = m_queueFamilyIndices;
+                bestRank = rank;
             }
         }
 
-        if (!m_physicalDevice)
+        if (bestDevice == VK_NULL_HANDLE)
         {
-            if (fallbackDevice == VK_NULL_HANDLE)
+            for (core::Feature feature : m_contextPreferences.requiredFeatures)
             {
-                for (core::Feature feature : m_contextPreferences.requiredFeatures)
-                {
-                    bool anyDeviceSupports = false;
+                bool anyDeviceSupports = false;
 
-                    for (const auto& physicalDevice : physicalDevices)
-                        if (deviceSupportsFeature(physicalDevice, feature))
-                        {
-                            anyDeviceSupports = true;
-                            break;
-                        }
+                for (const auto& physicalDevice : physicalDevices)
+                    if (deviceSupportsFeature(physicalDevice, feature))
+                    {
+                        anyDeviceSupports = true;
+                        break;
+                    }
 
-                    if (!anyDeviceSupports)
-                        throw std::runtime_error(std::string("No device supports Feature::")
-                            + core::toString(feature));
-                }
-
-                throw std::runtime_error("No suitable physical device found");
+                if (!anyDeviceSupports)
+                    throw std::runtime_error(std::string("No device supports Feature::")
+                        + core::toString(feature));
             }
 
-            m_physicalDevice = fallbackDevice;
-            m_queueFamilyIndices = fallbackIndices;
-
-            std::cerr << "No " << gpuPreferenceName(m_contextPreferences.preferredGpu)
-                      << " GPU available, falling back to \"" << fallbackProperties.deviceName << "\"\n";
+            throw std::runtime_error("No suitable physical device found");
         }
+
+        m_physicalDevice = bestDevice;
+        m_queueFamilyIndices = bestIndices;
+
+        if (bestProperties.deviceType != preferredType)
+            std::cerr << "No " << gpuPreferenceName(m_contextPreferences.preferredGpu)
+                      << " GPU available, falling back to \"" << bestProperties.deviceName << "\"\n";
 
         vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &m_physicalDeviceMemoryProperties);
 

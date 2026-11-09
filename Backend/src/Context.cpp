@@ -24,6 +24,11 @@ namespace vela::core
         m_contextImpl->waitIdle();
     }
 
+    Status Context::releaseDestroyed()
+    {
+        return m_contextImpl->releaseDestroyed();
+    }
+
     Result<Context> Context::create(Window& window, const ContextPreferences& contextPreferences)
     {
         try

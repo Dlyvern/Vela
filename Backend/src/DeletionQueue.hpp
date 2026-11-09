@@ -41,6 +41,12 @@ namespace vela::backend
 
         void flushAll();
 
+        /*
+            Destroys every pending entry except semaphores, which the presentation engine may still wait on even
+            after vkDeviceWaitIdle; they stay queued for collect(). Call only while the device is idle
+        */
+        void flushResources();
+
         [[nodiscard]] uint64_t currentFrame() const;
 
     private:

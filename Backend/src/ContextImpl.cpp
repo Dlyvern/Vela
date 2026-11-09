@@ -176,6 +176,8 @@ namespace vela::backend
         allocInfo.device = m_device;
         allocInfo.vulkanApiVersion = m_vulkanApiVersion;
         allocInfo.pVulkanFunctions = &vkFuncs;
+        // VMA's 256 MiB default leaves large, mostly empty blocks behind when big scenes are freed
+        allocInfo.preferredLargeHeapBlockSize = k_preferredLargeHeapBlockSize;
 
         m_memoryBudgetEnabled = checkDeviceExtension(m_physicalDevice, VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
 
@@ -1116,6 +1118,20 @@ namespace vela::backend
     void ContextImpl::waitIdle() const
     {
         vkDeviceWaitIdle(m_device);
+    }
+
+    Status ContextImpl::releaseDestroyed()
+    {
+        if (m_device == VK_NULL_HANDLE || !m_deletionQueue)
+            return Error{ErrorCode::InvalidArgument, "releaseDestroyed needs a window attached to the context"};
+
+        if (VkResult result = vkDeviceWaitIdle(m_device); result != VK_SUCCESS)
+            return Error{ErrorCode::Unknown, "Failed to wait for the device to go idle: " + resultName(result)};
+
+        reclaimUploads(true);
+        m_deletionQueue->flushResources();
+
+        return {};
     }
 
     bool ContextImpl::isSwapchainStale() const

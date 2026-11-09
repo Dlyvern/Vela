@@ -1072,6 +1072,8 @@ namespace vela::backend
 
         VmaAllocationCreateInfo imageAllocCI{};
         imageAllocCI.usage = VMA_MEMORY_USAGE_AUTO;
+        // Attachments are rebuilt on resizes and graph changes; inside shared blocks they would pin blocks of freed textures
+        imageAllocCI.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
 
         if (vmaCreateImage(m_context.impl()->getAllocator(), &imageCI, &imageAllocCI, 
         &attachment.image, &attachment.allocation, nullptr) != VK_SUCCESS)

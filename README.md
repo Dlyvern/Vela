@@ -249,6 +249,12 @@ rendering; throttle your loop yourself if that matters.
   once the pixels are in staging memory, and later frames are ordered after the copy.
   Loading hundreds of textures only waits when more than 256 MB of staging is in flight.
   `Texture::update()` replaces all pixels (same size and format), e.g. for a font atlas.
+- Destroyed meshes, textures, buffers and materials free their GPU memory once the frames in
+  flight that may use them have finished. `Context::releaseDestroyed()` idles the GPU and frees
+  it at once, for a level switch: release the old level, call it, then load the new one.
+  Memory comes from 64 MiB blocks (graph attachments and resources over 32 MiB get their own
+  allocation, so rebuilding the graph never pins a block of level data); a block that empties is
+  returned to the driver, except one kept per memory type for reuse.
 - `TextureOptions::generateMips` builds a texture's mip chain on the GPU from a single
   uncompressed level. BC formats need `Feature::TextureCompressionBC`, which Vela enables
   whenever the device has it; `SamplerDescription::anisotropy` needs

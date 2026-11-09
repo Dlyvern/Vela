@@ -54,6 +54,15 @@ namespace vela::core
 
         void waitIdle();
 
+        /*
+            Waits for the GPU to finish all submitted work, then frees the GPU memory of every resource already
+            destroyed (normally held back until the frames in flight that may use it have finished) and of
+            finished texture uploads' staging buffers. Use it between heavy unloads and loads, e.g. a level
+            switch, so the old memory is gone before the new is allocated. Stalls the GPU; not for every frame.
+            Returns: an error before attach() or if waiting for the device failed (nothing is freed then).
+        */
+        [[nodiscard]] Status releaseDestroyed();
+
         ~Context();
         Context(Context&&) noexcept;
         Context& operator=(Context&&) noexcept;

@@ -39,6 +39,7 @@ namespace vela::backend
         void setNativeWindow(void* nativeWindow);
 
         void waitIdle() const;
+        Status releaseDestroyed();
 
         VkDevice getDevice() const;
         VkInstance getInstance() const;
@@ -127,6 +128,7 @@ namespace vela::backend
         };
 
         static constexpr VkDeviceSize k_maxPendingUploadBytes{256ull * 1024 * 1024};
+        static constexpr VkDeviceSize k_preferredLargeHeapBlockSize{64ull * 1024 * 1024};
 
         std::deque<PendingUpload> m_pendingUploads;
         VkDeviceSize m_pendingUploadBytes{0};

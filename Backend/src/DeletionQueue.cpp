@@ -45,6 +45,18 @@ namespace vela::backend
         m_pending.clear();
     }
 
+    void DeletionQueue::flushResources()
+    {
+        std::erase_if(m_pending, [this](const std::pair<uint64_t, DeletionEntry>& pending)
+        {
+            if (pending.second.semaphore)
+                return false;
+
+            destroy(pending.second);
+            return true;
+        });
+    }
+
     void DeletionQueue::destroy(const DeletionEntry& entry)
     {
         if(entry.sampler)

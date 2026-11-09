@@ -158,6 +158,13 @@ namespace vela::backend
         // Fixed-size attachments don't depend on the swapchain, so a resize keeps them
         void destroyAllAttachments(bool keepFixedSize = false);
         void resetAllAttachmentLayouts();
+        // Clears persistent attachments created since the last frame, so they never hold undefined contents
+        void clearNewPersistentAttachments();
+        // After a frame: what it wrote into each double-buffered attachment becomes what History inputs read
+        void swapHistoryAttachments();
+
+        // Attachments some pass reads as InputUsage::History; each has a second image under an internal key
+        std::vector<std::string> m_historyAttachments;
 
         core::Context& m_context;
  

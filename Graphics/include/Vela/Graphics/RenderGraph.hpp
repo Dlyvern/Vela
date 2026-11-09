@@ -49,9 +49,10 @@ namespace vela::graphics
 
         /*
             Adds a pass. Its describe() is read now. Passes are ordered by what they declare: a pass runs after the
-            producers of every attachment and buffer it lists as an input, and a pass that writes an attachment
-            with LoadOp::Load runs after every pass added before it that writes the same attachment (so overlays
-            added later draw on top). Passes nothing reaches from the present source are culled.
+            producers of every attachment and buffer it lists as an input (except InputUsage::History inputs, which
+            read the previous frame), and a pass that writes an attachment with LoadOp::Load runs after every pass
+            added before it that writes the same attachment (so overlays added later draw on top). Passes nothing
+            reaches from the present source are culled, except producers of what a live pass reads as History.
             name:    unique name of the pass.
             pass:    the pass; the graph owns it.
             Returns: an error if the name is taken, the pass is null, or its attachments are invalid

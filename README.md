@@ -151,7 +151,8 @@ attachment relative to the swapchain, so a half-resolution pass is `scale = 0.5f
 
 Order comes from declarations, never from guesswork:
 
-- A pass runs after the producers of every attachment and buffer it lists as an input.
+- A pass runs after the producers of every attachment and buffer it lists as an input,
+  except `InputUsage::History` inputs, which read the previous frame.
 - A pass that writes an attachment with `LoadOp::Load` runs after every pass **added
   before it** that writes the same attachment. That is how overlays work: add the UI pass
   after the scene pass, load `"color"`, and it draws on top, whatever else the scene pass
@@ -192,6 +193,26 @@ auto graph = vela::builtins::forwardGraph(context, scene, options);
 The scene pass writes `k_sceneColorAttachment` (`"color"`, `RGBA16Float`) and
 `k_sceneDepthAttachment` (`"depth"`, `Depth32Float`), with or without MSAA, so passes you
 add after it don't change.
+
+### Persistent attachments and history
+
+Attachments start every frame with undefined contents. Set `persistent` on a slot to keep
+them across frames (say, to accumulate with `LoadOp::Load`); Vela clears it to the slot's
+`clear` value whenever it is (re)created, so it never holds garbage. For temporal effects,
+list the attachment as an input with `InputUsage::History`: the pass samples what it held
+at the end of the previous frame, with no ordering edge, so one pass can read and write it:
+
+```cpp
+color.name = "taaHistory";
+color.persistent = true;        // implied by the History input below
+color.clear = {0, 0, 0, 0};     // alpha 0 marks pixels with no history yet
+description.inputs = {{"color"}, {"taaHistory", vela::graphics::InputUsage::History}};
+// record(): bindAttachment(1, "taaHistory") binds last frame's image
+```
+
+An attachment read as History is double-buffered: writes go to one image, History reads
+the other, and they swap after each frame. A pass that *loads* it therefore sees the frame
+before last, so write every pixel. Persistent attachments are single-sampled.
 
 ### Sampling attachments
 

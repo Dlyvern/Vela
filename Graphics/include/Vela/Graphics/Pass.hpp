@@ -53,6 +53,15 @@ namespace vela::graphics
             as an input. Empty: no resolve; later passes can still load the multisampled attachment
         */
         std::string resolveTarget;
+
+        /*
+            Keeps the attachment's contents across frames instead of starting each frame undefined, e.g. for
+            accumulation with LoadOp::Load. Vela clears it to `clear` whenever it is (re)created: on first use,
+            after a resize (unless it has a fixed size) and after the graph changes. Single-sampled only. If any
+            pass reads it as InputUsage::History it is double-buffered, and a pass that loads it then sees the
+            frame before last, so write every pixel instead. Any pass declaring it persistent makes it persistent
+        */
+        bool persistent{false};
     };
 
     struct BufferSlot

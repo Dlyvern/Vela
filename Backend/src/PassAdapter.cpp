@@ -20,6 +20,7 @@ namespace
         output.size.width = slot.size.width;
         output.samples = static_cast<VkSampleCountFlagBits>(slot.samples);
         output.resolveTarget = slot.resolveTarget;
+        output.persistent = slot.persistent;
 
         return output;
     }

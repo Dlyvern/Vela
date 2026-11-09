@@ -74,7 +74,15 @@ namespace vela::graphics
     enum class InputUsage : uint8_t
     {
         Sampled = 0,
-        TransferSource
+        TransferSource,
+
+        /*
+            Samples what the attachment held at the end of the previous frame, e.g. the history of a temporal
+            filter. Creates no ordering edge, so the same pass may also write the attachment. Makes the attachment
+            persistent (see AttachmentSlot::persistent) and double-buffered: this frame's writers render into one
+            image while History readers sample the other, and the two swap after each frame. Single-sampled only
+        */
+        History
     };
 
     struct ClearValue

@@ -147,9 +147,14 @@ namespace vela::backend
 
     [[nodiscard]] inline InputUsage toBackendInputUsage(graphics::InputUsage usage)
     {
-        return usage == graphics::InputUsage::TransferSource
-            ? InputUsage::TransferSource
-            : InputUsage::Sampled;
+        switch (usage)
+        {
+            case graphics::InputUsage::Sampled:        return InputUsage::Sampled;
+            case graphics::InputUsage::TransferSource: return InputUsage::TransferSource;
+            case graphics::InputUsage::History:        return InputUsage::History;
+        }
+
+        return InputUsage::Sampled;
     }
 
     [[nodiscard]] inline VkClearValue toVkClearValue(const graphics::ClearValue& clear, bool isDepth)

@@ -27,6 +27,7 @@
 #include <iostream>
 #include <cstring>
 #include <optional>
+#include <unordered_set>
 
 namespace
 {
@@ -47,6 +48,20 @@ namespace
         | VK_ACCESS_2_SHADER_WRITE_BIT
         | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT
         | VK_ACCESS_2_MEMORY_WRITE_BIT;
+
+    // Key of the second image of a double-buffered attachment: what History readers sample this frame
+    std::string historyKey(const std::string& attachmentName)
+    {
+        return std::string("\0history:", 9) + attachmentName;
+    }
+
+    bool readsHistory(const vela::backend::PassDeclaration& declaration, const std::string& attachmentName)
+    {
+        return std::ranges::any_of(declaration.inputs, [&attachmentName](const vela::backend::PassInput& input)
+        {
+            return input.name == attachmentName && input.usage == vela::backend::InputUsage::History;
+        });
+    }
 } //namespace
 
 namespace vela::backend
@@ -297,7 +312,8 @@ namespace vela::backend
             return;
         }
 
-        const auto attachmentIt = m_attachments.find(attachmentName);
+        const bool history = readsHistory(m_currentRenderGraphPass->declaration, attachmentName);
+        const auto attachmentIt = m_attachments.find(history ? historyKey(attachmentName) : attachmentName);
 
         if (attachmentIt == m_attachments.end())
         {
@@ -689,8 +705,10 @@ namespace vela::backend
         {
             const PassDeclaration& declaration = m_renderGraphPasses[consumer].declaration;
 
+            // A History input reads the previous frame, so it doesn't wait for this frame's writers
             for (const PassInput& input : declaration.inputs)
-                addEdges(consumer, input.name);
+                if (input.usage != InputUsage::History)
+                    addEdges(consumer, input.name);
 
             for (const BufferInput& bufferInput : declaration.bufferInputs)
                 addEdges(consumer, bufferInput.name);
@@ -795,7 +813,15 @@ namespace vela::backend
             const size_t current = pending.back();
             pending.pop_back();
 
-            for (size_t predecessor : predecessors[current])
+            std::vector<size_t> contributors = predecessors[current];
+
+            // What a pass reads as History was written by its producers in the previous frame, so they stay too
+            for (const PassInput& input : m_renderGraphPasses[current].declaration.inputs)
+                if (input.usage == InputUsage::History)
+                    if (const auto producersIt = m_attachmentProducers.find(input.name); producersIt != m_attachmentProducers.end())
+                        contributors.insert(contributors.end(), producersIt->second.begin(), producersIt->second.end());
+
+            for (size_t predecessor : contributors)
             {
                 if (live[predecessor])
                     continue;
@@ -846,6 +872,22 @@ namespace vela::backend
             if (output->resolveTarget == output->name)
                 return Error{ErrorCode::InvalidArgument, "Pass " + passName + ": attachment " + output->name
                     + " can't resolve into itself"};
+
+            if (output->persistent && output->samples != VK_SAMPLE_COUNT_1_BIT)
+                return Error{ErrorCode::InvalidArgument, "Pass " + passName + ": attachment " + output->name
+                    + " is multisampled and can't be persistent"};
+        }
+
+        for (const PassInput& input : declaration.inputs)
+        {
+            const auto sameName = std::ranges::count_if(declaration.inputs, [&input](const PassInput& other)
+            {
+                return other.name == input.name;
+            });
+
+            if (input.usage == InputUsage::History && sameName > 1)
+                return Error{ErrorCode::InvalidArgument, "Pass " + passName + ": attachment " + input.name
+                    + " can't be both a History input and another input of the same pass"};
         }
 
         return {};
@@ -913,8 +955,63 @@ namespace vela::backend
         if(!m_presentAttachmentName.empty())
             usages[m_presentAttachmentName] |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
+        std::unordered_set<std::string> persistentNames;
+        m_historyAttachments.clear();
+
+        for(const auto& registered : m_renderGraphPasses)
+        {
+            for(const auto& colorOutput : registered.declaration.colorOutputs)
+                if(colorOutput.persistent)
+                    persistentNames.insert(colorOutput.name);
+
+            if(registered.declaration.depthOutput.has_value() && registered.declaration.depthOutput->persistent)
+                persistentNames.insert(registered.declaration.depthOutput->name);
+
+            for(const auto& input : registered.declaration.inputs)
+            {
+                if(input.usage != InputUsage::History)
+                    continue;
+
+                persistentNames.insert(input.name);
+
+                if(std::ranges::find(m_historyAttachments, input.name) == m_historyAttachments.end())
+                    m_historyAttachments.push_back(input.name);
+            }
+        }
+
+        // Persistent attachments are cleared with a transfer when they are created
+        for(const std::string& name : persistentNames)
+            usages[name] |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+
         for(const auto& registered : m_renderGraphPasses)
             allocateRenderGraphPassOutputs(registered.declaration, usages);
+
+        for(const std::string& name : persistentNames)
+            if(const auto attachmentIt = m_attachments.find(name); attachmentIt != m_attachments.end())
+                attachmentIt->second.persistent = true;
+
+        for(const std::string& name : m_historyAttachments)
+        {
+            const auto currentIt = m_attachments.find(name);
+
+            if(currentIt == m_attachments.end() || m_attachments.contains(historyKey(name)))
+                continue;
+
+            const Attachment& current = currentIt->second;
+
+            AttachmentOutput historyOutput{};
+            historyOutput.name = historyKey(name);
+            historyOutput.format = current.format;
+            historyOutput.size = current.extent;
+            historyOutput.samples = current.samples;
+            historyOutput.clear = current.clear;
+
+            Attachment history = allocateAttachment(historyOutput, usages[name], current.format == VK_FORMAT_D32_SFLOAT);
+            history.isFixedSize = current.isFixedSize;
+            history.persistent = true;
+
+            m_attachments[historyOutput.name] = history;
+        }
 
         constexpr VkImageUsageFlags k_readUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
@@ -923,10 +1020,15 @@ namespace vela::backend
                 throw std::runtime_error("Attachment " + name + " is multisampled and can't be a pass input or the "
                     "present source; read its resolve target instead");
 
-        m_attachmentStates.clear();
+        std::erase_if(m_attachmentStates, [this](const auto& entry)
+        {
+            return !m_attachments.contains(entry.first);
+        });
 
-        for(const auto& attachment : m_attachments)
-            m_attachmentStates[attachment.first] = AttachmentState{};
+        // A persistent attachment that survived a resize keeps its layout along with its contents
+        for(const auto& [name, attachment] : m_attachments)
+            if(!attachment.persistent || attachment.needsClear)
+                m_attachmentStates[name] = AttachmentState{};
 
         buildRenderGraphOrder();
     }
@@ -951,6 +1053,8 @@ namespace vela::backend
 
         attachment.format = attachmentOutput.format;
         attachment.samples = attachmentOutput.samples;
+        attachment.clear = attachmentOutput.clear;
+        attachment.needsClear = true;
 
         VkImageCreateInfo imageCI{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
         imageCI.imageType = VK_IMAGE_TYPE_2D;
@@ -1068,8 +1172,68 @@ namespace vela::backend
 
     void RenderGraphImpl::resetAllAttachmentLayouts()
     {
-        for(auto& [_, state] : m_attachmentStates)
-            state = AttachmentState{};
+        for(auto& [name, state] : m_attachmentStates)
+            if(const auto attachmentIt = m_attachments.find(name); attachmentIt == m_attachments.end() || !attachmentIt->second.persistent)
+                state = AttachmentState{};
+    }
+
+    void RenderGraphImpl::clearNewPersistentAttachments()
+    {
+        std::vector<VkImageMemoryBarrier2> barriers;
+        std::vector<std::string> cleared;
+
+        for(const auto& [name, attachment] : m_attachments)
+        {
+            if(!attachment.persistent || !attachment.needsClear)
+                continue;
+
+            transitionAttachment(name, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_CLEAR_BIT,
+                VK_ACCESS_2_TRANSFER_WRITE_BIT, barriers);
+            cleared.push_back(name);
+        }
+
+        if(cleared.empty())
+            return;
+
+        VkDependencyInfo dependencyInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        dependencyInfo.imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size());
+        dependencyInfo.pImageMemoryBarriers = barriers.data();
+
+        vkCmdPipelineBarrier2(m_currentCommandBuffer, &dependencyInfo);
+
+        for(const std::string& name : cleared)
+        {
+            Attachment& attachment = m_attachments[name];
+
+            if(attachment.format == VK_FORMAT_D32_SFLOAT)
+            {
+                const VkImageSubresourceRange range{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+                vkCmdClearDepthStencilImage(m_currentCommandBuffer, attachment.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    &attachment.clear.depthStencil, 1, &range);
+            }
+            else
+            {
+                const VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+                vkCmdClearColorImage(m_currentCommandBuffer, attachment.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    &attachment.clear.color, 1, &range);
+            }
+
+            attachment.needsClear = false;
+        }
+    }
+
+    void RenderGraphImpl::swapHistoryAttachments()
+    {
+        for(const std::string& name : m_historyAttachments)
+        {
+            const std::string previous = historyKey(name);
+
+            if(!m_attachments.contains(name) || !m_attachments.contains(previous))
+                continue;
+
+            std::swap(m_attachments[name], m_attachments[previous]);
+            std::swap(m_attachmentStates[name], m_attachmentStates[previous]);
+        }
     }
 
     void RenderGraphImpl::transitionAttachment(const std::string& name, VkImageLayout newLayout,
@@ -1200,6 +1364,7 @@ namespace vela::backend
         }
 
         resetAllAttachmentLayouts();
+        clearNewPersistentAttachments();
 
         //Move swapchain image's layout. For now leave it like this maybe later we can make RGP to render not only in swapchain
         VkImageMemoryBarrier2 toWrite{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
@@ -1465,6 +1630,8 @@ namespace vela::backend
 
             if (m_pendingReadback)
                 recordReadback(presentAttachment);
+
+            swapHistoryAttachments();
         }
 
         endFrame();
@@ -1785,7 +1952,11 @@ namespace vela::backend
                 continue;
             }
 
-            if(input.usage == InputUsage::TransferSource)
+            if(input.usage == InputUsage::History)
+                transitionAttachment(historyKey(input.name), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                    VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, memoryBarriers);
+            else if(input.usage == InputUsage::TransferSource)
                 transitionAttachment(input.name, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                     VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, memoryBarriers);
             else

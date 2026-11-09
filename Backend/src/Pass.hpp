@@ -21,6 +21,11 @@ namespace vela::backend
         VkSampleCountFlagBits samples{VK_SAMPLE_COUNT_1_BIT};
         bool external{false};
         bool isFixedSize{false};
+
+        // Persistent attachments keep layout and contents across frames; needsClear until the first frame clears them
+        bool persistent{false};
+        bool needsClear{false};
+        VkClearValue clear{};
     };
 
     struct PassContext
@@ -46,9 +51,10 @@ namespace vela::backend
         VkExtent2D size{};
         VkSampleCountFlagBits samples{VK_SAMPLE_COUNT_1_BIT};
         std::string resolveTarget;
+        bool persistent{false};
     };
 
-    enum class InputUsage : uint8_t { Sampled = 0, TransferSource };
+    enum class InputUsage : uint8_t { Sampled = 0, TransferSource, History };
 
     struct PassInput
     {

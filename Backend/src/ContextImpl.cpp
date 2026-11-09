@@ -8,9 +8,34 @@
 #include <algorithm>
 #include <unordered_set>
 #include <cstdlib>
+#include <string>
 
 namespace vela::backend
-{ 
+{
+    namespace
+    {
+        std::string resultName(VkResult result)
+        {
+            switch (result)
+            {
+                case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
+                case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
+                case VK_ERROR_INITIALIZATION_FAILED: return "VK_ERROR_INITIALIZATION_FAILED";
+                case VK_ERROR_DEVICE_LOST: return "VK_ERROR_DEVICE_LOST";
+                case VK_ERROR_LAYER_NOT_PRESENT: return "VK_ERROR_LAYER_NOT_PRESENT";
+                case VK_ERROR_EXTENSION_NOT_PRESENT: return "VK_ERROR_EXTENSION_NOT_PRESENT";
+                case VK_ERROR_FEATURE_NOT_PRESENT: return "VK_ERROR_FEATURE_NOT_PRESENT";
+                case VK_ERROR_INCOMPATIBLE_DRIVER: return "VK_ERROR_INCOMPATIBLE_DRIVER";
+                case VK_ERROR_TOO_MANY_OBJECTS: return "VK_ERROR_TOO_MANY_OBJECTS";
+                case VK_ERROR_SURFACE_LOST_KHR: return "VK_ERROR_SURFACE_LOST_KHR";
+                case VK_ERROR_NATIVE_WINDOW_IN_USE_KHR: return "VK_ERROR_NATIVE_WINDOW_IN_USE_KHR";
+                case VK_ERROR_OUT_OF_DATE_KHR: return "VK_ERROR_OUT_OF_DATE_KHR";
+                case VK_ERROR_UNKNOWN: return "VK_ERROR_UNKNOWN";
+                default: return "VkResult " + std::to_string(static_cast<int>(result));
+            }
+        }
+    } //namespace
+ 
     ContextImpl::ContextImpl(core::IWindowBackend& windowBackend, const core::ContextPreferences& contextPreferences) : m_windowBackend(windowBackend),
     m_contextPreferences(contextPreferences)
     {
@@ -277,7 +302,7 @@ namespace vela::backend
         commandPoolCI.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
         if(VkResult result = vkCreateCommandPool(m_device, &commandPoolCI, nullptr, &m_commandPool); result != VK_SUCCESS)
-            throw std::runtime_error("Failed to create command pool");
+            throw std::runtime_error("Failed to create command pool: " + resultName(result));
     }
 
     VkFormat ContextImpl::getSwapchainFormat() const
@@ -433,8 +458,8 @@ namespace vela::backend
 
         if(swapchainCreationResult != VK_SUCCESS)
         {
-            detail::LogLine(LogLevel::Error) << "Swapchain error result: " << swapchainCreationResult << '\n';
-            throw std::runtime_error("Failed to create swapchain");
+            detail::LogLine(LogLevel::Error) << "Swapchain error result: " << resultName(swapchainCreationResult) << '\n';
+            throw std::runtime_error("Failed to create swapchain: " + resultName(swapchainCreationResult));
         }
 
         if (oldSwapchain != VK_NULL_HANDLE)
@@ -465,7 +490,7 @@ namespace vela::backend
 
             if (VkResult result = vkCreateImageView(m_device, &imageViewCI, nullptr, &m_swapchainImageViews[index]);
                     result != VK_SUCCESS)
-                throw std::runtime_error("Failed to create image view");
+                throw std::runtime_error("Failed to create image view: " + resultName(result));
         }
     }
 
@@ -979,8 +1004,8 @@ namespace vela::backend
         deviceCI.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
         deviceCI.ppEnabledExtensionNames = deviceExtensions.data();
 
-        if (vkCreateDevice(m_physicalDevice, &deviceCI, nullptr, &m_device) != VK_SUCCESS)
-            throw std::runtime_error("Failed to create Vulkan device");
+        if (VkResult result = vkCreateDevice(m_physicalDevice, &deviceCI, nullptr, &m_device); result != VK_SUCCESS)
+            throw std::runtime_error("Failed to create Vulkan device: " + resultName(result));
 
         volkLoadDevice(m_device);
 
@@ -1300,6 +1325,6 @@ namespace vela::backend
         createInfo.ppEnabledLayerNames = layers.data();
 
         if(VkResult result = vkCreateInstance(&createInfo, nullptr, &m_instance); result != VK_SUCCESS)
-            throw std::runtime_error("Failed to create Vulkan instance");
+            throw std::runtime_error("Failed to create Vulkan instance: " + resultName(result));
     }
 } //namespace vela::backend

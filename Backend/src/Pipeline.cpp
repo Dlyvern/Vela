@@ -55,6 +55,8 @@ namespace
             case vela::graphics::VertexAttributeFormat::Float3: return VK_FORMAT_R32G32B32_SFLOAT;
             case vela::graphics::VertexAttributeFormat::Float4: return VK_FORMAT_R32G32B32A32_SFLOAT;
             case vela::graphics::VertexAttributeFormat::Unorm8x4: return VK_FORMAT_R8G8B8A8_UNORM;
+            case vela::graphics::VertexAttributeFormat::Uint8x4: return VK_FORMAT_R8G8B8A8_UINT;
+            case vela::graphics::VertexAttributeFormat::Uint16x4: return VK_FORMAT_R16G16B16A16_UINT;
         }
 
         throw std::runtime_error("Unknown vertex attribute format");

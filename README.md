@@ -336,6 +336,22 @@ Vela's dependencies — GLFW, volk, VMA, stb - are
 Vela's problem: they are vendored, built statically, and exported as part of the package.
 You need Vulkan itself, and nothing else.
 
+### Shaders
+
+```cmake
+vela_compile_shaders(TARGET app SOURCES shaders/lit.vert shaders/lit.frag)
+```
+
+compiles each GLSL file to `shaders/<name>.spv` and copies the results into a `shaders/`
+folder next to `app`. `#include`d files are tracked, and editing a shader restages it
+without relinking `app`. For a static library that loads its own shaders, compile them once
+on the library and stage them next to each executable that links it:
+
+```cmake
+vela_compile_shaders(TARGET mylib SOURCES shaders/sky.frag)
+vela_stage_shaders(TARGET app FROM mylib)
+```
+
 ---
 
 ## Current limitations

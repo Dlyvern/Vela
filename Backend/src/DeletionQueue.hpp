@@ -29,7 +29,16 @@ namespace vela::backend
         DeletionQueue& operator=(const DeletionQueue&) = delete;
 
         void push(const DeletionEntry& entry);
-        void retireFrame();
+
+        // Destroys entries no frame in flight can still use. Call after waiting for the oldest frame's fence
+        void collect();
+
+        /*
+            Called once a frame has been submitted. From then on currentFrame() names the next frame,
+            so work done between two execute() calls is attributed to the frame it will be drawn in
+        */
+        void advanceFrame();
+
         void flushAll();
 
         [[nodiscard]] uint64_t currentFrame() const;

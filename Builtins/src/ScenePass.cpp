@@ -7,20 +7,36 @@ namespace vela::builtins
         
     }
 
+    ScenePass::ScenePass(const graphics::RenderScene& renderScene, const ScenePassOptions& options) :
+        m_renderScene(&renderScene), m_options(options)
+    {
+
+    }
+
     graphics::PassDescription ScenePass::describe() const
     {
+        const bool multisampled = m_options.samples > 1;
+
         graphics::AttachmentSlot colorSlot{};
-        colorSlot.format = graphics::TextureFormat::RGBA16Float;
+        colorSlot.format = k_sceneColorFormat;
         colorSlot.load = graphics::LoadOp::Clear;
         colorSlot.store = graphics::StoreOp::Store;
-        colorSlot.name = "color";
-        colorSlot.clear = m_clearValue;
+        colorSlot.name = multisampled ? k_sceneColorMsaaAttachment : k_sceneColorAttachment;
+        colorSlot.clear = m_options.clear;
+        colorSlot.samples = m_options.samples;
 
         graphics::AttachmentSlot depthSlot{};
-        depthSlot.format = graphics::TextureFormat::Depth32Float;
+        depthSlot.format = k_sceneDepthFormat;
         depthSlot.load = graphics::LoadOp::Clear;
         depthSlot.store = graphics::StoreOp::Store;
-        depthSlot.name = "depth";
+        depthSlot.name = multisampled ? k_sceneDepthMsaaAttachment : k_sceneDepthAttachment;
+        depthSlot.samples = m_options.samples;
+
+        if (multisampled)
+        {
+            colorSlot.resolveTarget = k_sceneColorAttachment;
+            depthSlot.resolveTarget = k_sceneDepthAttachment;
+        }
 
         graphics::PassDescription passDescription{};
         passDescription.colorOutputs.push_back(colorSlot);

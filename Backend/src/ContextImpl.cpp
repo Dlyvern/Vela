@@ -1,4 +1,5 @@
 #include "ContextImpl.hpp"
+#include "Vela/Log.hpp"
 #include <array>
 #include <vector>
 #include <stdexcept>
@@ -44,14 +45,16 @@ namespace vela::backend
         {
             ++m_validationMessageCount;
 
-            std::cerr << "[vulkan] " << (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT ? "error" : "warning")
+            const bool isError = (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0;
+
+            detail::LogLine(isError ? LogLevel::Error : LogLevel::Warning) << "[vulkan] " << (isError ? "error" : "warning")
                       << ": " << (callbackData->pMessage != nullptr ? callbackData->pMessage : "") << '\n';
 
             return VK_FALSE;
         };
 
         if (vkCreateDebugUtilsMessengerEXT(m_instance, &messengerCI, nullptr, &m_debugMessenger) != VK_SUCCESS)
-            std::cerr << "Failed to create debug messenger\n";
+            detail::LogLine(LogLevel::Error) << "Failed to create debug messenger\n";
 #endif
     }
 
@@ -60,6 +63,8 @@ namespace vela::backend
         if (m_device != VK_NULL_HANDLE)
         {
             vkDeviceWaitIdle(m_device);
+
+            reclaimUploads(true);
 
             if (m_deletionQueue)
                 m_deletionQueue->flushAll();
@@ -152,10 +157,10 @@ namespace vela::backend
         if(m_memoryBudgetEnabled)
         {
             allocInfo.flags |= VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT;
-            std::cout << "Driver does have VK_EXT_MEMORY_BUDGET_EXTENSION_NAME extension\n";
+            detail::LogLine(LogLevel::Info) << "Driver does have VK_EXT_MEMORY_BUDGET_EXTENSION_NAME extension\n";
         }
         else
-            std::cerr << "Driver does not have VK_EXT_MEMORY_BUDGET_EXTENSION_NAME extension\n";
+            detail::LogLine(LogLevel::Warning) << "Driver does not have VK_EXT_MEMORY_BUDGET_EXTENSION_NAME extension\n";
 
         if (vmaCreateAllocator(&allocInfo, &m_allocator) != VK_SUCCESS)
             throw std::runtime_error("Failed to create VMA allocator");
@@ -163,19 +168,98 @@ namespace vela::backend
         m_deletionQueue = std::make_unique<DeletionQueue>(m_device, m_allocator);
     }
 
+    VkPhysicalDevice ContextImpl::getPhysicalDevice() const
+    {
+        return m_physicalDevice;
+    }
+
+    Status ContextImpl::submitUpload(VkCommandBuffer commandBuffer, VkBuffer stagingBuffer,
+        VmaAllocation stagingAllocation, VkDeviceSize stagingBytes)
+    {
+        PendingUpload upload{};
+        upload.commandBuffer = commandBuffer;
+        upload.stagingBuffer = stagingBuffer;
+        upload.stagingAllocation = stagingAllocation;
+        upload.stagingBytes = stagingBytes;
+
+        VkFenceCreateInfo fenceCI{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+
+        if (vkCreateFence(m_device, &fenceCI, nullptr, &upload.fence) != VK_SUCCESS)
+        {
+            releaseUpload(upload);
+            return Error{ErrorCode::AllocationFailed, "Failed to create upload fence"};
+        }
+
+        VkCommandBufferSubmitInfo commandBufferSubmitInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+        commandBufferSubmitInfo.commandBuffer = commandBuffer;
+
+        VkSubmitInfo2 submit{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+        submit.pCommandBufferInfos = &commandBufferSubmitInfo;
+        submit.commandBufferInfoCount = 1;
+
+        if (vkQueueSubmit2(m_graphicsQueue, 1, &submit, upload.fence) != VK_SUCCESS)
+        {
+            releaseUpload(upload);
+            return Error{ErrorCode::Unknown, "Failed to submit upload"};
+        }
+
+        m_pendingUploads.push_back(upload);
+        m_pendingUploadBytes += stagingBytes;
+
+        reclaimUploads(false);
+
+        while (m_pendingUploadBytes > k_maxPendingUploadBytes && m_pendingUploads.size() > 1)
+        {
+            const PendingUpload oldest = m_pendingUploads.front();
+            vkWaitForFences(m_device, 1, &oldest.fence, VK_TRUE, UINT64_MAX);
+            reclaimUploads(false);
+        }
+
+        return {};
+    }
+
+    void ContextImpl::reclaimUploads(bool wait)
+    {
+        while (!m_pendingUploads.empty())
+        {
+            const PendingUpload& upload = m_pendingUploads.front();
+
+            if (wait)
+                vkWaitForFences(m_device, 1, &upload.fence, VK_TRUE, UINT64_MAX);
+            else if (vkGetFenceStatus(m_device, upload.fence) != VK_SUCCESS)
+                return;
+
+            m_pendingUploadBytes -= upload.stagingBytes;
+            releaseUpload(upload);
+            m_pendingUploads.pop_front();
+        }
+    }
+
+    void ContextImpl::releaseUpload(const PendingUpload& upload)
+    {
+        if (upload.fence != VK_NULL_HANDLE)
+            vkDestroyFence(m_device, upload.fence, nullptr);
+
+        if (upload.commandBuffer != VK_NULL_HANDLE)
+            vkFreeCommandBuffers(m_device, m_commandPool, 1, &upload.commandBuffer);
+
+        if (upload.stagingBuffer != VK_NULL_HANDLE)
+            vmaDestroyBuffer(m_allocator, upload.stagingBuffer, upload.stagingAllocation);
+    }
+
+    bool ContextImpl::isSurfaceDrawable() const
+    {
+        VkSurfaceCapabilitiesKHR capabilities;
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &capabilities);
+
+        const VkExtent2D extent = framebufferExtent(capabilities);
+
+        return extent.width != 0 && extent.height != 0;
+    }
+
     void ContextImpl::recreateSwapchain()
     {
         vkDeviceWaitIdle(m_device);
-
-        VkSurfaceCapabilitiesKHR caps;
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &caps);
-
-        // Minimised: block until there is something to render into again.
-        while (framebufferExtent(caps).width == 0 || framebufferExtent(caps).height == 0)
-        {
-            m_windowBackend.waitEvents();
-            vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, m_surface, &caps);
-        }
 
         for (auto v  : m_swapchainImageViews)
             vkDestroyImageView(m_device, v, nullptr);
@@ -201,6 +285,90 @@ namespace vela::backend
         return m_swapchainFormat;
     }
 
+    std::vector<VkPresentModeKHR> ContextImpl::surfacePresentModes() const
+    {
+        uint32_t presentModeCount{0};
+        vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, nullptr);
+        std::vector<VkPresentModeKHR> presentModes(presentModeCount);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data());
+
+#if defined(VK_EXT_present_mode_fifo_latest_ready)
+        if (!m_fifoLatestReadyEnabled)
+            std::erase(presentModes, VK_PRESENT_MODE_FIFO_LATEST_READY_EXT);
+#endif
+
+        return presentModes;
+    }
+
+    VkPresentModeKHR ContextImpl::choosePresentMode() const
+    {
+        std::vector<VkPresentModeKHR> candidates;
+
+        switch (m_contextPreferences.preferredVSync)
+        {
+            case core::VSync::Off:
+                candidates = {VK_PRESENT_MODE_IMMEDIATE_KHR, VK_PRESENT_MODE_MAILBOX_KHR};
+                break;
+            case core::VSync::Fast:
+                candidates = {VK_PRESENT_MODE_MAILBOX_KHR};
+                break;
+            case core::VSync::Adaptive:
+                candidates = {VK_PRESENT_MODE_FIFO_RELAXED_KHR};
+                break;
+            case core::VSync::LatestReady:
+#if defined(VK_EXT_present_mode_fifo_latest_ready)
+                candidates = {VK_PRESENT_MODE_FIFO_LATEST_READY_EXT};
+#endif
+                break;
+            case core::VSync::On:
+                break;
+        }
+
+        const std::vector<VkPresentModeKHR> available = surfacePresentModes();
+
+        for (const VkPresentModeKHR candidate : candidates)
+            if (std::find(available.begin(), available.end(), candidate) != available.end())
+                return candidate;
+
+        // The one mode every surface must support
+        return VK_PRESENT_MODE_FIFO_KHR;
+    }
+
+    std::vector<core::VSync> ContextImpl::getSupportedVSync() const
+    {
+        std::vector<core::VSync> supported{core::VSync::On};
+
+        if (m_surface == VK_NULL_HANDLE || m_physicalDevice == VK_NULL_HANDLE)
+            return supported;
+
+        for (const VkPresentModeKHR presentMode : surfacePresentModes())
+        {
+            switch (presentMode)
+            {
+                case VK_PRESENT_MODE_IMMEDIATE_KHR:    supported.push_back(core::VSync::Off); break;
+                case VK_PRESENT_MODE_MAILBOX_KHR:      supported.push_back(core::VSync::Fast); break;
+                case VK_PRESENT_MODE_FIFO_RELAXED_KHR: supported.push_back(core::VSync::Adaptive); break;
+#if defined(VK_EXT_present_mode_fifo_latest_ready)
+                case VK_PRESENT_MODE_FIFO_LATEST_READY_EXT: supported.push_back(core::VSync::LatestReady); break;
+#endif
+                default: break;
+            }
+        }
+
+        return supported;
+    }
+
+    Status ContextImpl::setVSync(core::VSync vsync)
+    {
+        if (m_swapchain == VK_NULL_HANDLE)
+            return Error{ErrorCode::InvalidArgument, "setVSync needs a window attached to the context"};
+
+        m_contextPreferences.preferredVSync = vsync;
+        m_presentModeChanged = choosePresentMode() != m_swapchainPresentMode;
+
+        return {};
+    }
+
     void ContextImpl::createSwapchain()
     {
         auto getSwapchainFormat = [this]
@@ -219,33 +387,6 @@ namespace vela::backend
             return surfaceFormats[0];
         };
 
-        auto getSwapchainPresentMode = [this]
-        {
-            uint32_t presentModeCount{0};
-            vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, nullptr);
-            std::vector<VkPresentModeKHR> presentModes(presentModeCount);
-            vkGetPhysicalDeviceSurfacePresentModesKHR(m_physicalDevice, m_surface, &presentModeCount, presentModes.data());
-
-            auto toVkPresentMode = [](core::VSync vsync)
-            {
-                switch (vsync)
-                {
-                    case core::VSync::Off:      return VK_PRESENT_MODE_IMMEDIATE_KHR;
-                    case core::VSync::Fast:     return VK_PRESENT_MODE_MAILBOX_KHR;
-                    case core::VSync::Adaptive: return VK_PRESENT_MODE_FIFO_RELAXED_KHR;
-                    default:                    return VK_PRESENT_MODE_FIFO_KHR;
-                }
-            };
-
-            const VkPresentModeKHR preferred = toVkPresentMode(m_contextPreferences.preferredVSync);
-
-            for(const VkPresentModeKHR presentMode : presentModes)
-                if(presentMode == preferred)
-                    return preferred;
-
-            return VK_PRESENT_MODE_FIFO_KHR;
-        };
-
         auto getSwapchainExtent = [this]
         {
             VkSurfaceCapabilitiesKHR surfaceCapabilities;
@@ -254,10 +395,11 @@ namespace vela::backend
         };
 
         VkSurfaceFormatKHR format = getSwapchainFormat();
-        VkPresentModeKHR presentMode = getSwapchainPresentMode();
+        VkPresentModeKHR presentMode = choosePresentMode();
         VkSurfaceCapabilitiesKHR surfaceCapabilities = getSwapchainExtent();
 
         m_swapchainPresentMode = presentMode;
+        m_presentModeChanged = false;
 
         uint32_t imageCount = surfaceCapabilities.minImageCount + 1;
         if (surfaceCapabilities.maxImageCount > 0 && imageCount > surfaceCapabilities.maxImageCount)
@@ -291,7 +433,7 @@ namespace vela::backend
 
         if(swapchainCreationResult != VK_SUCCESS)
         {
-            std::cerr << "Swapchain error result: " << swapchainCreationResult << '\n';
+            detail::LogLine(LogLevel::Error) << "Swapchain error result: " << swapchainCreationResult << '\n';
             throw std::runtime_error("Failed to create swapchain");
         }
 
@@ -480,28 +622,29 @@ namespace vela::backend
         QueueFamilyIndices bestIndices;
         int bestRank{-1};
 
-        std::cout << "Vulkan devices:\n";
+        detail::LogLine(LogLevel::Info) << "Vulkan devices:\n";
 
         for(const auto& physicalDevice : physicalDevices)
         {
             VkPhysicalDeviceProperties physicalDeviceProperties{};
             vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
 
-            std::cout << "  " << physicalDeviceProperties.deviceName << " (" << deviceTypeName(physicalDeviceProperties.deviceType) << ')';
+            const std::string deviceLine = std::string("  ") + physicalDeviceProperties.deviceName + " ("
+                + deviceTypeName(physicalDeviceProperties.deviceType) + ')';
 
             if(!checkQueueFamilyProperties(physicalDevice))
             {
-                std::cout << " - skipped: no graphics/present queue for this surface\n";
+                vela::log(LogLevel::Info, deviceLine + " - skipped: no graphics/present queue for this surface");
                 continue;
             }
 
             if(!supportsRequiredFeatures(physicalDevice))
             {
-                std::cout << " - skipped: missing a required feature\n";
+                vela::log(LogLevel::Info, deviceLine + " - skipped: missing a required feature");
                 continue;
             }
 
-            std::cout << '\n';
+            vela::log(LogLevel::Info, deviceLine);
 
             // Ties keep the driver's enumeration order
             const int rank = rankDevice(physicalDeviceProperties.deviceType);
@@ -540,7 +683,7 @@ namespace vela::backend
         m_queueFamilyIndices = bestIndices;
 
         if (bestProperties.deviceType != preferredType)
-            std::cerr << "No " << gpuPreferenceName(m_contextPreferences.preferredGpu)
+            detail::LogLine(LogLevel::Warning) << "No " << gpuPreferenceName(m_contextPreferences.preferredGpu)
                       << " GPU available, falling back to \"" << bestProperties.deviceName << "\"\n";
 
         vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &m_physicalDeviceMemoryProperties);
@@ -592,6 +735,11 @@ namespace vela::backend
         for (core::Feature feature : m_contextPreferences.optionalFeatures)
             if (!alreadyEnabled(feature) && deviceSupportsFeature(m_physicalDevice, feature))
                 m_enabledFeatures.push_back(feature);
+
+        // TextureFormat exposes BC formats, so they work wherever the device can sample them
+        if (!alreadyEnabled(core::Feature::TextureCompressionBC)
+            && deviceSupportsFeature(m_physicalDevice, core::Feature::TextureCompressionBC))
+            m_enabledFeatures.push_back(core::Feature::TextureCompressionBC);
     }
 
     void ContextImpl::buildDeviceInfo(const VkPhysicalDeviceDriverProperties& driverProperties)
@@ -675,39 +823,43 @@ namespace vela::backend
     {
         constexpr uint64_t megabyte = 1024 * 1024;
 
-        std::cout << "Selected GPU: \n------------------------------------------\n";
+        detail::LogLine(LogLevel::Info) << "Selected GPU: \n------------------------------------------\n";
 
-        std::cout << "Name: " << m_deviceInfo.name << '\n';
-        std::cout << "Type: " << core::toString(m_deviceInfo.type) << '\n';
-        std::cout << "Vendor / device id: 0x" << std::hex << m_deviceInfo.vendorId
+        detail::LogLine(LogLevel::Info) << "Name: " << m_deviceInfo.name << '\n';
+        detail::LogLine(LogLevel::Info) << "Type: " << core::toString(m_deviceInfo.type) << '\n';
+        detail::LogLine(LogLevel::Info) << "Vendor / device id: 0x" << std::hex << m_deviceInfo.vendorId
                   << " / 0x" << m_deviceInfo.deviceId << std::dec << '\n';
-        std::cout << "Driver: " << m_deviceInfo.driverName << " (" << m_deviceInfo.driverInfo << ")\n";
-        std::cout << "API version: " << m_deviceInfo.apiVersion.major << '.'
+        detail::LogLine(LogLevel::Info) << "Driver: " << m_deviceInfo.driverName << " (" << m_deviceInfo.driverInfo << ")\n";
+        detail::LogLine(LogLevel::Info) << "API version: " << m_deviceInfo.apiVersion.major << '.'
                   << m_deviceInfo.apiVersion.minor << '.' << m_deviceInfo.apiVersion.patch << '\n';
-        std::cout << "Device local memory: " << m_deviceInfo.deviceLocalMemoryBytes / megabyte << " MB\n";
-        std::cout << "Host visible memory: " << m_deviceInfo.hostVisibleMemoryBytes / megabyte << " MB\n";
-        std::cout << "Unified memory: " << (m_deviceInfo.unifiedMemory ? "yes" : "no") << '\n';
-        std::cout << "Timestamps: " << (m_deviceInfo.timestampsSupported ? "yes" : "no")
+        detail::LogLine(LogLevel::Info) << "Device local memory: " << m_deviceInfo.deviceLocalMemoryBytes / megabyte << " MB\n";
+        detail::LogLine(LogLevel::Info) << "Host visible memory: " << m_deviceInfo.hostVisibleMemoryBytes / megabyte << " MB\n";
+        detail::LogLine(LogLevel::Info) << "Unified memory: " << (m_deviceInfo.unifiedMemory ? "yes" : "no") << '\n';
+        detail::LogLine(LogLevel::Info) << "Timestamps: " << (m_deviceInfo.timestampsSupported ? "yes" : "no")
                   << " (period " << m_deviceInfo.timestampPeriodNs << " ns)\n";
-        std::cout << "Max 2D texture size: " << m_deviceInfo.maxTextureSize2D << '\n';
-        std::cout << "Max MSAA samples: " << m_deviceInfo.maxMsaaSamples << '\n';
-        std::cout << "Max anisotropy: " << m_deviceInfo.maxAnisotropy << '\n';
+        detail::LogLine(LogLevel::Info) << "Max 2D texture size: " << m_deviceInfo.maxTextureSize2D << '\n';
+        detail::LogLine(LogLevel::Info) << "Max MSAA samples: " << m_deviceInfo.maxMsaaSamples << '\n';
+        detail::LogLine(LogLevel::Info) << "Max anisotropy: " << m_deviceInfo.maxAnisotropy << '\n';
 
-        std::cout << "Supported features:";
-        for (core::Feature feature : m_deviceInfo.supportedFeatures)
-            std::cout << ' ' << core::toString(feature);
-        std::cout << '\n';
+        {
+            detail::LogLine line(LogLevel::Info);
+            line << "Supported features:";
+            for (core::Feature feature : m_deviceInfo.supportedFeatures)
+                line << ' ' << core::toString(feature);
+        }
 
-        std::cout << "Enabled features:";
-        for (core::Feature feature : m_deviceInfo.enabledFeatures)
-            std::cout << ' ' << core::toString(feature);
-        std::cout << '\n';
-        std::cout << "Present queue family " << m_queueFamilyIndices.present.value() << '\n';
-        std::cout << "Graphics queue family " << m_queueFamilyIndices.graphics.value() << '\n';
-        std::cout << "Transfer queue family " << m_queueFamilyIndices.transfer.value() << '\n';
-        std::cout << "Compute queue family " << m_queueFamilyIndices.compute.value() << '\n';
+        {
+            detail::LogLine line(LogLevel::Info);
+            line << "Enabled features:";
+            for (core::Feature feature : m_deviceInfo.enabledFeatures)
+                line << ' ' << core::toString(feature);
+        }
+        detail::LogLine(LogLevel::Info) << "Present queue family " << m_queueFamilyIndices.present.value() << '\n';
+        detail::LogLine(LogLevel::Info) << "Graphics queue family " << m_queueFamilyIndices.graphics.value() << '\n';
+        detail::LogLine(LogLevel::Info) << "Transfer queue family " << m_queueFamilyIndices.transfer.value() << '\n';
+        detail::LogLine(LogLevel::Info) << "Compute queue family " << m_queueFamilyIndices.compute.value() << '\n';
 
-        std::cout << "------------------------------------------\n";
+        detail::LogLine(LogLevel::Info) << "------------------------------------------\n";
     }
 
     const core::DeviceInfo& ContextImpl::getDeviceInfo() const
@@ -724,6 +876,9 @@ namespace vela::backend
                 case VK_PRESENT_MODE_IMMEDIATE_KHR:    return core::VSync::Off;
                 case VK_PRESENT_MODE_MAILBOX_KHR:      return core::VSync::Fast;
                 case VK_PRESENT_MODE_FIFO_RELAXED_KHR: return core::VSync::Adaptive;
+#if defined(VK_EXT_present_mode_fifo_latest_ready)
+                case VK_PRESENT_MODE_FIFO_LATEST_READY_EXT: return core::VSync::LatestReady;
+#endif
                 default:                               return core::VSync::On;
             }
         };
@@ -796,6 +951,26 @@ namespace vela::backend
             featureChain.enable(feature);
 
         featureChain.link(m_enabledFeatures);
+
+#if defined(VK_EXT_present_mode_fifo_latest_ready)
+        VkPhysicalDevicePresentModeFifoLatestReadyFeaturesEXT latestReadyFeatures{
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_EXT};
+
+        if (checkDeviceExtension(m_physicalDevice, VK_EXT_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME))
+        {
+            VkPhysicalDeviceFeatures2 supportedFeatures{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+            supportedFeatures.pNext = &latestReadyFeatures;
+            vkGetPhysicalDeviceFeatures2(m_physicalDevice, &supportedFeatures);
+
+            if (latestReadyFeatures.presentModeFifoLatestReady == VK_TRUE)
+            {
+                deviceExtensions.push_back(VK_EXT_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME);
+                latestReadyFeatures.pNext = featureChain.features2.pNext;
+                featureChain.features2.pNext = &latestReadyFeatures;
+                m_fifoLatestReadyEnabled = true;
+            }
+        }
+#endif
 
         VkDeviceCreateInfo deviceCI{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
         deviceCI.pNext = &featureChain.features2;
@@ -920,6 +1095,9 @@ namespace vela::backend
 
     bool ContextImpl::isSwapchainStale() const
     {
+        if (m_presentModeChanged)
+            return true;
+
         int width{0};
         int height{0};
         m_windowBackend.getFramebufferSize(m_nativeWindow, width, height);
@@ -1012,7 +1190,7 @@ namespace vela::backend
 
             if (!found)
             {
-                std::cerr << "Missing Vulkan instance extension: " << required << '\n';
+                detail::LogLine(LogLevel::Error) << "Missing Vulkan instance extension: " << required << '\n';
                 return false;
             }
         }
@@ -1051,7 +1229,7 @@ namespace vela::backend
 
             if (!found)
             {
-                std::cerr << "Missing Vulkan layer: " << required << '\n';
+                detail::LogLine(LogLevel::Error) << "Missing Vulkan layer: " << required << '\n';
                 return false;
             }
         }
@@ -1111,7 +1289,7 @@ namespace vela::backend
         if (m_syncValidationEnabled)
         {
             createInfo.pNext = &layerSettingsCI;
-            std::cout << "Synchronization validation enabled\n";
+            detail::LogLine(LogLevel::Info) << "Synchronization validation enabled\n";
         }
 #endif
 

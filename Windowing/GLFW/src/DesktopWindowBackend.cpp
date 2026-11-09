@@ -1,4 +1,5 @@
 #include "Vela/Windowing/DesktopWindowBackend.hpp"
+#include "Vela/Log.hpp"
 
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
@@ -463,6 +464,16 @@ namespace vela::windowing
         glfwSetInputMode(glfwWindow, GLFW_CURSOR, toGLFWCursorMode(mode));
     }
 
+    bool DesktopWindowBackend::setRawMouseMotion(void* nativeWindow, bool enabled)
+    {
+        if (glfwRawMouseMotionSupported() != GLFW_TRUE)
+            return false;
+
+        glfwSetInputMode(static_cast<GLFWwindow*>(nativeWindow), GLFW_RAW_MOUSE_MOTION, enabled ? GLFW_TRUE : GLFW_FALSE);
+
+        return true;
+    }
+
     void DesktopWindowBackend::setCursorShape(void* nativeWindow, core::CursorShape shape)
     {
         auto glfwWindow = static_cast<GLFWwindow*>(nativeWindow);
@@ -501,7 +512,7 @@ namespace vela::windowing
 
     void DesktopWindowBackend::glfwErrorCallback(int errorCode, const char* description)
     {
-        std::cerr << "[DesktopWindowBackend] Code: " << errorCode
+        detail::LogLine(LogLevel::Error) << "[DesktopWindowBackend] Code: " << errorCode
               << " Description: "
               << description
               << '\n';
@@ -551,7 +562,7 @@ namespace vela::windowing
                 disconnectEvent.type = core::EventType::GamepadDisconnected;
                 m_events[nativeWindowHandle].push_back(disconnectEvent);
 
-                std::cerr << "Joystick " << gamepad.id << " disconnected\n";
+                detail::LogLine(LogLevel::Info) << "Joystick " << gamepad.id << " disconnected\n";
 
                 continue;
             }
@@ -563,7 +574,7 @@ namespace vela::windowing
                 connectedEvent.type = core::EventType::GamepadConnected;
                 m_events[nativeWindowHandle].push_back(connectedEvent);
 
-                std::cerr << "Joystick " << gamepad.id << " connected\n";
+                detail::LogLine(LogLevel::Info) << "Joystick " << gamepad.id << " connected\n";
 
                 gamepad.firedAboutConnection = true;
 
@@ -927,7 +938,7 @@ namespace vela::windowing
         }
 
         if(!m_gamepads.empty())
-            std::cout << "Found " << m_gamepads.size() << " connected gamepads\n";
+            detail::LogLine(LogLevel::Info) << "Found " << m_gamepads.size() << " connected gamepads\n";
 
         return window;
     }

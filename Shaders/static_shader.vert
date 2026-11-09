@@ -8,6 +8,9 @@ layout(push_constant) uniform ModelPC
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec2 inTextureCoordinates;
 
+// Declared because StaticVertex::layout() provides it; this unlit shader does not use it
+layout(location = 2) in vec3 inNormal;
+
 layout(location = 0) out vec2 outTextureCoordinates;
 
 layout(set = 0, binding = 0) uniform Camera

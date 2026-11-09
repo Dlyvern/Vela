@@ -334,7 +334,8 @@ int main()
 
     vela::graphics::Texture texture = std::move(textureResult).value();
 
-    material.setTexture(0, texture);
+    if (auto bound = material.setTexture(0, texture); !bound)
+        return fail(bound.error());
 
     static auto lastTime = std::chrono::steady_clock::now();
 

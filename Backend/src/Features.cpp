@@ -23,7 +23,8 @@ namespace vela::backend
             core::Feature::WideLines,
             core::Feature::Bindless,
             core::Feature::RayTracing,
-            core::Feature::MeshShaders
+            core::Feature::MeshShaders,
+            core::Feature::TextureCompressionBC
         };
 
         bool hasDeviceExtension(VkPhysicalDevice physicalDevice, const char* extensionName)
@@ -53,6 +54,7 @@ namespace vela::backend
             case core::Feature::FillModeNonSolid:
             case core::Feature::WideLines:
             case core::Feature::Bindless:
+            case core::Feature::TextureCompressionBC:
                 return {};
         }
 
@@ -133,6 +135,10 @@ namespace vela::backend
             case core::Feature::MeshShaders:
                 meshShader.meshShader = VK_TRUE;
                 break;
+
+            case core::Feature::TextureCompressionBC:
+                features2.features.textureCompressionBC = VK_TRUE;
+                break;
         }
     }
 
@@ -162,6 +168,9 @@ namespace vela::backend
 
             case core::Feature::MeshShaders:
                 return meshShader.meshShader == VK_TRUE;
+
+            case core::Feature::TextureCompressionBC:
+                return features2.features.textureCompressionBC == VK_TRUE;
         }
 
         return false;

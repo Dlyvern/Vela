@@ -18,10 +18,13 @@ namespace vela::backend
         m_pending.push_back({m_currentFrame, entry});
     }
 
-    void DeletionQueue::retireFrame()
+    void DeletionQueue::advanceFrame()
     {
         ++m_currentFrame;
+    }
 
+    void DeletionQueue::collect()
+    {
         std::erase_if(m_pending, [this](const std::pair<uint64_t, DeletionEntry>& two)
         {
             if(two.first + k_framesInFlight <= m_currentFrame)

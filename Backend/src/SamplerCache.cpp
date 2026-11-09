@@ -1,7 +1,9 @@
 #include "SamplerCache.hpp"
+#include "Vela/Log.hpp"
 
 #include "Formats.hpp"
 
+#include <algorithm>
 #include <stdexcept>
 #include <iostream>
 
@@ -71,7 +73,7 @@ namespace vela::backend
         if(m_deviceInfo.enabled(core::Feature::SamplerAnisotropy))
         {
             samplerCI.anisotropyEnable = true;
-            samplerCI.maxAnisotropy = samplerDescription.anisotropy;
+            samplerCI.maxAnisotropy = std::clamp(samplerDescription.anisotropy, 1.0f, m_deviceInfo.maxAnisotropy);
         }
         else
             samplerCI.maxAnisotropy = 1.0f;
@@ -83,7 +85,7 @@ namespace vela::backend
 
         m_samplers[hash] = sampler;
 
-        std::cout << "New sampler was created with " << hash << " key\n";
+        detail::LogLine(LogLevel::Debug) << "New sampler was created with " << hash << " key\n";
 
         return sampler;
     }

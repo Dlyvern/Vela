@@ -101,6 +101,7 @@ namespace vela::core
             case VSync::On:       return "On (fifo)";
             case VSync::Adaptive: return "Adaptive (fifo relaxed)";
             case VSync::Fast:     return "Fast (mailbox)";
+            case VSync::LatestReady: return "LatestReady (fifo latest ready)";
         }
 
         return "On (fifo)";

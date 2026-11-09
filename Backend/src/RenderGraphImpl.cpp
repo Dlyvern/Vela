@@ -1,4 +1,5 @@
 #include "RenderGraphImpl.hpp"
+#include "Vela/Log.hpp"
 
 #include "Vela/Core/Context.hpp"
 
@@ -19,11 +20,13 @@
 #include "ContextImpl.hpp"
 #include "TextureImpl.hpp"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <stdexcept>
 #include <iostream>
 #include <cstring>
+#include <optional>
 
 namespace
 {
@@ -144,7 +147,7 @@ namespace vela::backend
 
         VkQueryPoolCreateInfo queryPoolCI{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
         queryPoolCI.queryType = VK_QUERY_TYPE_TIMESTAMP;
-        queryPoolCI.queryCount = k_framesInFlight * 2;
+        queryPoolCI.queryCount = k_framesInFlight * k_queriesPerFrame;
 
         if(VkResult result = vkCreateQueryPool(m_device, &queryPoolCI, nullptr, &m_queryPool); result != VK_SUCCESS)
             throw std::runtime_error("Failed to create query pool");
@@ -153,7 +156,7 @@ namespace vela::backend
         m_gpuTimingSupported = context.impl()->getGraphicsTimestampValidBits() > 0;
 
         if(!m_gpuTimingSupported)
-            std::cerr << "Graphics queue does not support timestamps, GPU timing unavailable\n";
+            detail::LogLine(LogLevel::Warning) << "Graphics queue does not support timestamps, GPU timing unavailable\n";
     }
 
     Status RenderGraphImpl::addPass(const std::string& name, std::unique_ptr<graphics::Pass> pass)
@@ -164,9 +167,7 @@ namespace vela::backend
         if (m_renderGraphPassIndices.contains(name))
             return Error{ErrorCode::InvalidArgument, "Render graph pass already exists: " + name};
 
-        addRenderGraphPass(name, std::make_unique<PassAdapter>(std::move(pass), *this));
-
-        return {};
+        return addRenderGraphPass(name, std::make_unique<PassAdapter>(std::move(pass), *this));
     }
 
     Status RenderGraphImpl::addComputePass(const std::string& name, std::unique_ptr<graphics::ComputePass> pass)
@@ -177,7 +178,54 @@ namespace vela::backend
         if (m_renderGraphPassIndices.contains(name))
             return Error{ErrorCode::InvalidArgument, "Render graph pass already exists: " + name};
 
-        addRenderGraphPass(name, std::make_unique<ComputePassAdapter>(std::move(pass), *this));
+        return addRenderGraphPass(name, std::make_unique<ComputePassAdapter>(std::move(pass), *this));
+    }
+
+    Status RenderGraphImpl::removePass(const std::string& name)
+    {
+        if (m_currentRenderGraphPass != nullptr)
+            return Error{ErrorCode::InvalidArgument, "Render graph passes can't be removed while the graph records"};
+
+        const auto indexIt = m_renderGraphPassIndices.find(name);
+
+        if (indexIt == m_renderGraphPassIndices.end())
+            return Error{ErrorCode::InvalidArgument, "Render graph pass does not exist: " + name};
+
+        const size_t removed = indexIt->second;
+
+        m_renderGraphPasses.erase(m_renderGraphPasses.begin() + static_cast<std::ptrdiff_t>(removed));
+        m_renderGraphPassIndices.erase(indexIt);
+
+        for (auto& [passName, index] : m_renderGraphPassIndices)
+            if (index > removed)
+                --index;
+
+        m_isRenderGraphDirty = true;
+
+        return {};
+    }
+
+    Status RenderGraphImpl::redescribePass(const std::string& name)
+    {
+        if (m_currentRenderGraphPass != nullptr)
+            return Error{ErrorCode::InvalidArgument, "Render graph passes can't be redescribed while the graph records"};
+
+        const auto indexIt = m_renderGraphPassIndices.find(name);
+
+        if (indexIt == m_renderGraphPassIndices.end())
+            return Error{ErrorCode::InvalidArgument, "Render graph pass does not exist: " + name};
+
+        RegisteredPass& registered = m_renderGraphPasses[indexIt->second];
+
+        PassDeclaration declaration = registered.pass->declare();
+
+        if (auto valid = validateDeclaration(name, declaration); !valid)
+            return valid;
+
+        registered.declaration = std::move(declaration);
+        registered.formats = formatsOf(registered.declaration);
+
+        m_isRenderGraphDirty = true;
 
         return {};
     }
@@ -207,13 +255,13 @@ namespace vela::backend
 
         if (bufferIt == m_buffers.end())
         {
-            std::cerr << "Compute pass referenced unknown buffer " << bufferName << '\n';
+            detail::LogLine(LogLevel::Error) << "Compute pass referenced unknown buffer " << bufferName << '\n';
             return;
         }
 
         if (auto bound = program.impl()->setStorageBuffer(slot, bufferIt->second.buffer, bufferIt->second.size); !bound)
         {
-            std::cerr << bound.error().message << '\n';
+            detail::LogLine(LogLevel::Error) << bound.error().message << '\n';
             return;
         }
 
@@ -237,14 +285,15 @@ namespace vela::backend
         vkCmdDraw(m_currentCommandBuffer, vertexCount, instanceCount, firstVertex, firstInstance);
     }
 
-    void RenderGraphImpl::bindAttachment(uint32_t slot, const std::string& attachmentName)
+    void RenderGraphImpl::bindAttachment(uint32_t slot, const std::string& attachmentName,
+        const graphics::SamplerDescription* sampler)
     {
         if(!m_isFrameValid || !m_currentRenderGraphPass)
             return;
 
         if (slot >= k_passInputSlots)
         {
-            std::cerr << "Pass input slot " << slot << " is out of range\n";
+            detail::LogLine(LogLevel::Error) << "Pass input slot " << slot << " is out of range\n";
             return;
         }
 
@@ -252,7 +301,13 @@ namespace vela::backend
 
         if (attachmentIt == m_attachments.end())
         {
-            std::cerr << "Pass referenced unknown attachment " << attachmentName << '\n';
+            detail::LogLine(LogLevel::Error) << "Pass referenced unknown attachment " << attachmentName << '\n';
+            return;
+        }
+
+        if (attachmentIt->second.samples != VK_SAMPLE_COUNT_1_BIT)
+        {
+            detail::LogLine(LogLevel::Error) << "Attachment " << attachmentName << " is multisampled; bind its resolve target instead\n";
             return;
         }
 
@@ -268,6 +323,9 @@ namespace vela::backend
             samplerDescription.magFilter = graphics::Filter::Nearest;
             samplerDescription.mipMode = graphics::MipMode::Nearest;
         }
+
+        if (sampler != nullptr)
+            samplerDescription = *sampler;
 
         InputBinding binding{};
         binding.view = attachmentIt->second.view;
@@ -287,7 +345,7 @@ namespace vela::backend
 
         if (slot >= k_passInputSlots)
         {
-            std::cerr << "Pass input slot " << slot << " is out of range\n";
+            detail::LogLine(LogLevel::Error) << "Pass input slot " << slot << " is out of range\n";
             return;
         }
 
@@ -334,7 +392,7 @@ namespace vela::backend
 
                 if (pool == VK_NULL_HANDLE)
                 {
-                    std::cerr << "Failed to create transient descriptor pool\n";
+                    detail::LogLine(LogLevel::Error) << "Failed to create transient descriptor pool\n";
                     return VK_NULL_HANDLE;
                 }
 
@@ -354,7 +412,7 @@ namespace vela::backend
 
             if (result != VK_ERROR_OUT_OF_POOL_MEMORY && result != VK_ERROR_FRAGMENTED_POOL)
             {
-                std::cerr << "Failed to allocate transient descriptor set\n";
+                detail::LogLine(LogLevel::Error) << "Failed to allocate transient descriptor set\n";
                 return VK_NULL_HANDLE;
             }
 
@@ -445,12 +503,12 @@ namespace vela::backend
 
         if (bufferIt == m_buffers.end())
         {
-            std::cerr << "Pass referenced unknown buffer " << bufferName << '\n';
+            detail::LogLine(LogLevel::Error) << "Pass referenced unknown buffer " << bufferName << '\n';
             return;
         }
 
         if (auto bound = m_boundMaterial->setStorageBuffer(slot, bufferIt->second.buffer, bufferIt->second.size); !bound)
-            std::cerr << bound.error().message << '\n';
+            detail::LogLine(LogLevel::Error) << bound.error().message << '\n';
 
         m_materialSetsDirty = true;
     }
@@ -498,7 +556,7 @@ namespace vela::backend
             if (vmaCreateBuffer(m_context.impl()->getAllocator(), &bufferCI, &allocationCI,
                     &graphBuffer.buffer, &graphBuffer.allocation, nullptr) != VK_SUCCESS)
             {
-                std::cerr << "Failed to allocate graph buffer " << name << '\n';
+                detail::LogLine(LogLevel::Error) << "Failed to allocate graph buffer " << name << '\n';
                 continue;
             }
 
@@ -588,10 +646,20 @@ namespace vela::backend
             const PassDeclaration& declaration = m_renderGraphPasses[index].declaration;
 
             for (const AttachmentOutput& colorOutput : declaration.colorOutputs)
+            {
                 m_attachmentProducers[colorOutput.name].push_back(index);
 
+                if (!colorOutput.resolveTarget.empty())
+                    m_attachmentProducers[colorOutput.resolveTarget].push_back(index);
+            }
+
             if (declaration.depthOutput.has_value())
+            {
                 m_attachmentProducers[declaration.depthOutput->name].push_back(index);
+
+                if (!declaration.depthOutput->resolveTarget.empty())
+                    m_attachmentProducers[declaration.depthOutput->resolveTarget].push_back(index);
+            }
 
             for (const BufferOutput& bufferOutput : declaration.bufferOutputs)
                 m_attachmentProducers[bufferOutput.name].push_back(index);
@@ -626,6 +694,28 @@ namespace vela::backend
 
             for (const BufferInput& bufferInput : declaration.bufferInputs)
                 addEdges(consumer, bufferInput.name);
+
+            // Loading an attachment means drawing on top of what the passes added before this one wrote into it
+            auto addLoadEdges = [&](const AttachmentOutput& output)
+            {
+                if (output.load != VK_ATTACHMENT_LOAD_OP_LOAD)
+                    return;
+
+                for (size_t producer : m_attachmentProducers[output.name])
+                {
+                    if (producer >= consumer)
+                        continue;
+
+                    successors[producer].push_back(consumer);
+                    ++inDegree[consumer];
+                }
+            };
+
+            for (const AttachmentOutput& colorOutput : declaration.colorOutputs)
+                addLoadEdges(colorOutput);
+
+            if (declaration.depthOutput.has_value())
+                addLoadEdges(declaration.depthOutput.value());
         }
 
         std::vector<bool> emitted(passCount, false);
@@ -725,15 +815,51 @@ namespace vela::backend
         m_executionOrder = std::move(culled);
     }
 
-    Pass& RenderGraphImpl::addRenderGraphPass(const std::string& name, std::unique_ptr<Pass> pass)
+    Status RenderGraphImpl::validateDeclaration(const std::string& passName, const PassDeclaration& declaration) const
     {
-        if (m_renderGraphPassIndices.contains(name))
-            throw std::runtime_error("Render graph pass already exists: " + name);
+        const uint32_t maxSamples = m_context.impl()->getDeviceInfo().maxMsaaSamples;
 
-        Pass& added = *pass;
+        std::vector<const AttachmentOutput*> outputs;
 
+        for (const AttachmentOutput& colorOutput : declaration.colorOutputs)
+            outputs.push_back(&colorOutput);
+
+        if (declaration.depthOutput.has_value())
+            outputs.push_back(&declaration.depthOutput.value());
+
+        for (const AttachmentOutput* output : outputs)
+        {
+            const uint32_t samples = static_cast<uint32_t>(output->samples);
+
+            if (samples == 0 || (samples & (samples - 1)) != 0 || samples > maxSamples)
+                return Error{ErrorCode::InvalidArgument, "Pass " + passName + ": attachment " + output->name + " asks for "
+                    + std::to_string(samples) + " samples; the device supports powers of two up to " + std::to_string(maxSamples)};
+
+            if (output->samples != outputs.front()->samples)
+                return Error{ErrorCode::InvalidArgument, "Pass " + passName
+                    + ": every color and depth output of a pass must use the same sample count"};
+
+            if (!output->resolveTarget.empty() && output->samples == VK_SAMPLE_COUNT_1_BIT)
+                return Error{ErrorCode::InvalidArgument, "Pass " + passName + ": attachment " + output->name
+                    + " has a resolve target but is not multisampled"};
+
+            if (output->resolveTarget == output->name)
+                return Error{ErrorCode::InvalidArgument, "Pass " + passName + ": attachment " + output->name
+                    + " can't resolve into itself"};
+        }
+
+        return {};
+    }
+
+    Status RenderGraphImpl::addRenderGraphPass(const std::string& name, std::unique_ptr<Pass> pass)
+    {
         RenderGraphImpl::RegisteredPass registered;
+        registered.name = name;
         registered.declaration = pass->declare();
+
+        if (auto valid = validateDeclaration(name, registered.declaration); !valid)
+            return valid;
+
         registered.formats = formatsOf(registered.declaration);
         registered.pass = std::move(pass);
 
@@ -742,7 +868,7 @@ namespace vela::backend
 
         m_isRenderGraphDirty = true;
 
-        return added;
+        return {};
     }
     
     void RenderGraphImpl::setView(const math::Mat4& view, const math::Mat4& projection)
@@ -763,10 +889,20 @@ namespace vela::backend
         for(const auto& registered : m_renderGraphPasses)
         {
             for(const auto& colorOutput : registered.declaration.colorOutputs)
+            {
                 usages[colorOutput.name] |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
+                if(!colorOutput.resolveTarget.empty())
+                    usages[colorOutput.resolveTarget] |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+            }
+
             if(registered.declaration.depthOutput.has_value())
+            {
                 usages[registered.declaration.depthOutput->name] |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+                if(!registered.declaration.depthOutput->resolveTarget.empty())
+                    usages[registered.declaration.depthOutput->resolveTarget] |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+            }
 
             for(const auto& input : registered.declaration.inputs)
                 usages[input.name] |= input.usage == InputUsage::TransferSource
@@ -779,6 +915,13 @@ namespace vela::backend
 
         for(const auto& registered : m_renderGraphPasses)
             allocateRenderGraphPassOutputs(registered.declaration, usages);
+
+        constexpr VkImageUsageFlags k_readUsage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+
+        for(const auto& [name, attachment] : m_attachments)
+            if(attachment.samples != VK_SAMPLE_COUNT_1_BIT && (usages[name] & k_readUsage) != 0)
+                throw std::runtime_error("Attachment " + name + " is multisampled and can't be a pass input or the "
+                    "present source; read its resolve target instead");
 
         m_attachmentStates.clear();
 
@@ -807,6 +950,7 @@ namespace vela::backend
         }
 
         attachment.format = attachmentOutput.format;
+        attachment.samples = attachmentOutput.samples;
 
         VkImageCreateInfo imageCI{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
         imageCI.imageType = VK_IMAGE_TYPE_2D;
@@ -819,7 +963,7 @@ namespace vela::backend
 
         imageCI.usage = usage;
 
-        imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
+        imageCI.samples = attachment.samples;
         imageCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
         VmaAllocationCreateInfo imageAllocCI{};
@@ -861,11 +1005,30 @@ namespace vela::backend
             m_attachments[output.name] = allocateAttachment(output, usage, isDepth);
         };
 
+        auto allocateResolveTarget = [&allocate](const AttachmentOutput& output, bool isDepth)
+        {
+            if(output.resolveTarget.empty())
+                return;
+
+            AttachmentOutput resolveTarget = output;
+            resolveTarget.name = output.resolveTarget;
+            resolveTarget.resolveTarget.clear();
+            resolveTarget.samples = VK_SAMPLE_COUNT_1_BIT;
+
+            allocate(resolveTarget, isDepth);
+        };
+
         for(const auto& colorOutput : declaration.colorOutputs)
+        {
             allocate(colorOutput, false);
+            allocateResolveTarget(colorOutput, false);
+        }
 
         if(declaration.depthOutput.has_value())
+        {
             allocate(declaration.depthOutput.value(), true);
+            allocateResolveTarget(declaration.depthOutput.value(), true);
+        }
     }
 
     VkExtent2D RenderGraphImpl::passExtent(const PassDeclaration& declaration) const
@@ -974,9 +1137,14 @@ namespace vela::backend
 
         VkFence frameFence = m_inFlightFences[m_frameIndex];
 
+        const auto waitStart = std::chrono::steady_clock::now();
+
         vkWaitForFences(m_device, 1, &frameFence, VK_TRUE, UINT64_MAX);
 
-        m_context.impl()->getDeletionQueue().retireFrame();
+        m_frameWaitMs = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - waitStart).count();
+
+        m_context.impl()->getDeletionQueue().collect();
+        m_context.impl()->reclaimUploads(false);
 
         for (VkDescriptorPool pool : m_transientPools[m_frameIndex])
             vkResetDescriptorPool(m_device, pool, 0);
@@ -984,24 +1152,16 @@ namespace vela::backend
         m_transientPoolCursor[m_frameIndex] = 0;
 
         if (m_gpuTimingSupported && m_timestampsWritten[m_frameIndex])
-        {
-            uint64_t results[4]{};
+            readTimestamps();
 
-            vkGetQueryPoolResults(m_device, m_queryPool, m_frameIndex * 2, 2,
-                sizeof(results), results, sizeof(uint64_t) * 2,
-                VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+        deliverReadback(m_frameIndex, true);
 
-            if (results[1] != 0 && results[3] != 0)
-            {
-                const uint64_t delta = results[2] - results[0];
-                m_frameStats.gpuFrameMs = static_cast<float>(delta) * m_timestampPeriod / 1'000'000.0f;
-                m_frameStats.gpuTimingValid = true;
-            }
-        }
-
+        const auto acquireStart = std::chrono::steady_clock::now();
 
         VkResult acquireResult = vkAcquireNextImageKHR(m_device, m_context.impl()->getSwapchain(), UINT64_MAX,
             m_imageAvailable[m_frameIndex], VK_NULL_HANDLE, &m_currentImageIndex);
+
+        m_frameWaitMs += std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - acquireStart).count();
 
         if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR)
         {
@@ -1032,9 +1192,11 @@ namespace vela::backend
 
         if (m_gpuTimingSupported)
         {
-            vkCmdResetQueryPool(m_currentCommandBuffer, m_queryPool, m_frameIndex * 2, 2);
-            vkCmdWriteTimestamp2(m_currentCommandBuffer, VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, m_queryPool, m_frameIndex * 2);
+            vkCmdResetQueryPool(m_currentCommandBuffer, m_queryPool, m_frameIndex * k_queriesPerFrame, k_queriesPerFrame);
+            vkCmdWriteTimestamp2(m_currentCommandBuffer, VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, m_queryPool,
+                m_frameIndex * k_queriesPerFrame);
             m_timestampsWritten[m_frameIndex] = true;
+            m_timedPassNames[m_frameIndex].clear();
         }
 
         resetAllAttachmentLayouts();
@@ -1067,6 +1229,70 @@ namespace vela::backend
     graphics::FrameStats RenderGraphImpl::getFrameStats() const
     {
         return m_frameStats;
+    }
+
+    const std::vector<graphics::PassTiming>& RenderGraphImpl::getPassTimings() const
+    {
+        return m_passTimings;
+    }
+
+    void RenderGraphImpl::readTimestamps()
+    {
+        const std::vector<std::string>& passNames = m_timedPassNames[m_frameIndex];
+        const uint32_t queryCount = 2 + 2 * static_cast<uint32_t>(passNames.size());
+
+        // Each query is a value followed by its availability
+        std::array<uint64_t, k_queriesPerFrame * 2> results{};
+
+        vkGetQueryPoolResults(m_device, m_queryPool, m_frameIndex * k_queriesPerFrame, queryCount,
+            queryCount * sizeof(uint64_t) * 2, results.data(), sizeof(uint64_t) * 2,
+            VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+
+        auto elapsedMs = [this, &results](uint32_t beginQuery, uint32_t endQuery) -> std::optional<float>
+        {
+            if (results[beginQuery * 2 + 1] == 0 || results[endQuery * 2 + 1] == 0)
+                return std::nullopt;
+
+            const uint64_t delta = results[endQuery * 2] - results[beginQuery * 2];
+
+            return static_cast<float>(delta) * m_timestampPeriod / 1'000'000.0f;
+        };
+
+        if (const std::optional<float> frameMs = elapsedMs(0, 1))
+        {
+            m_frameStats.gpuFrameMs = *frameMs;
+            m_frameStats.gpuTimingValid = true;
+        }
+
+        m_passTimings.clear();
+
+        for (uint32_t pass = 0; pass < passNames.size(); ++pass)
+            if (const std::optional<float> passMs = elapsedMs(2 + pass * 2, 3 + pass * 2))
+                m_passTimings.push_back({passNames[pass], *passMs});
+    }
+
+    void RenderGraphImpl::writePassTimestamp(bool begin)
+    {
+        if (!m_gpuTimingSupported || m_currentRenderGraphPass == nullptr)
+            return;
+
+        std::vector<std::string>& passNames = m_timedPassNames[m_frameIndex];
+
+        if (begin)
+        {
+            if (passNames.size() >= k_maxTimedPasses)
+                return;
+
+            passNames.push_back(m_currentRenderGraphPass->name);
+        }
+        else if (passNames.empty() || passNames.back() != m_currentRenderGraphPass->name)
+            return;
+
+        const uint32_t query = m_frameIndex * k_queriesPerFrame + 2 + 2 * static_cast<uint32_t>(passNames.size() - 1)
+            + (begin ? 0 : 1);
+
+        vkCmdWriteTimestamp2(m_currentCommandBuffer, begin ? VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT
+            : VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, m_queryPool, query);
     }
 
     void RenderGraphImpl::endFrame()
@@ -1105,7 +1331,8 @@ namespace vela::backend
         VkFence frameFence = m_inFlightFences[m_frameIndex];
 
         if (m_gpuTimingSupported)
-            vkCmdWriteTimestamp2(m_currentCommandBuffer, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, m_queryPool, m_frameIndex * 2 + 1);
+            vkCmdWriteTimestamp2(m_currentCommandBuffer, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, m_queryPool,
+                m_frameIndex * k_queriesPerFrame + 1);
 
         vkEndCommandBuffer(m_currentCommandBuffer);
 
@@ -1144,6 +1371,7 @@ namespace vela::backend
         VkResult presentResult = vkQueuePresentKHR(m_graphicsQueue, &present);
 
         m_frameIndex = (m_frameIndex + 1) % k_framesInFlight;
+        m_context.impl()->getDeletionQueue().advanceFrame();
 
         if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR)
             recreateSwapchainResources();
@@ -1234,14 +1462,186 @@ namespace vela::backend
             blit.filter = VK_FILTER_LINEAR;
 
             vkCmdBlitImage2(m_currentCommandBuffer, &blit);
+
+            if (m_pendingReadback)
+                recordReadback(presentAttachment);
         }
 
         endFrame();
 
         m_frameStats.cpuFrameMs = std::chrono::duration<float, std::milli>(
             std::chrono::steady_clock::now() - frameStart).count();
+        m_frameStats.cpuWaitMs = std::min(m_frameWaitMs, m_frameStats.cpuFrameMs);
+        m_frameStats.cpuWorkMs = m_frameStats.cpuFrameMs - m_frameStats.cpuWaitMs;
+        m_frameWaitMs = 0.0f;
 
         return {};
+    }
+
+    Status RenderGraphImpl::readbackFrame(std::function<void(const graphics::ImageData&)> onReady)
+    {
+        if (!onReady)
+            return Error{ErrorCode::InvalidArgument, "readbackFrame needs a callback"};
+
+        if (m_pendingReadback)
+            return Error{ErrorCode::InvalidArgument, "A frame readback is already pending"};
+
+        for (const Readback& readback : m_readbacks)
+            if (readback.onReady)
+                return Error{ErrorCode::InvalidArgument, "A frame readback is already pending"};
+
+        m_pendingReadback = std::move(onReady);
+
+        return {};
+    }
+
+    void RenderGraphImpl::recordReadback(const Attachment& presentAttachment)
+    {
+        Readback& readback = m_readbacks[m_frameIndex];
+        readback.extent = m_context.impl()->getSwapchainExtent();
+
+        const VmaAllocator allocator = m_context.impl()->getAllocator();
+
+        // Blitting into an 8-bit sRGB image converts the linear present source exactly as presenting does.
+        // A UNORM swapchain means the present source already holds sRGB-encoded values: copy those unchanged
+        const bool srgbSwapchain = m_context.impl()->getSwapchainInfo().srgb;
+
+        VkImageCreateInfo imageCI{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        imageCI.imageType = VK_IMAGE_TYPE_2D;
+        imageCI.extent = {readback.extent.width, readback.extent.height, 1};
+        imageCI.mipLevels = 1;
+        imageCI.arrayLayers = 1;
+        imageCI.format = srgbSwapchain ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+        imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        imageCI.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        imageCI.samples = VK_SAMPLE_COUNT_1_BIT;
+        imageCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        VmaAllocationCreateInfo imageAllocationCI{};
+        imageAllocationCI.usage = VMA_MEMORY_USAGE_AUTO;
+
+        VkBufferCreateInfo bufferCI{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        bufferCI.size = static_cast<VkDeviceSize>(readback.extent.width) * readback.extent.height * 4;
+        bufferCI.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        bufferCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        VmaAllocationCreateInfo bufferAllocationCI{};
+        bufferAllocationCI.usage = VMA_MEMORY_USAGE_AUTO;
+        bufferAllocationCI.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        VmaAllocationInfo bufferInfo{};
+
+        if (vmaCreateImage(allocator, &imageCI, &imageAllocationCI, &readback.image, &readback.imageAllocation, nullptr) != VK_SUCCESS
+            || vmaCreateBuffer(allocator, &bufferCI, &bufferAllocationCI, &readback.buffer, &readback.bufferAllocation,
+                &bufferInfo) != VK_SUCCESS)
+        {
+            detail::LogLine(LogLevel::Error) << "Failed to allocate frame readback; the capture is skipped\n";
+            deliverReadback(m_frameIndex, false);
+            m_pendingReadback = nullptr;
+            return;
+        }
+
+        readback.mapped = bufferInfo.pMappedData;
+        readback.onReady = std::move(m_pendingReadback);
+        m_pendingReadback = nullptr;
+
+        VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.image = readback.image;
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_NONE;
+        barrier.srcAccessMask = VK_ACCESS_2_NONE;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+
+        VkDependencyInfo dependencyInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        dependencyInfo.imageMemoryBarrierCount = 1;
+        dependencyInfo.pImageMemoryBarriers = &barrier;
+
+        vkCmdPipelineBarrier2(m_currentCommandBuffer, &dependencyInfo);
+
+        // Same blit as the one to the swapchain, so the capture matches what the window shows
+        VkImageBlit2 region{VK_STRUCTURE_TYPE_IMAGE_BLIT_2};
+        region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.srcOffsets[1] = {static_cast<int32_t>(presentAttachment.extent.width),
+                                static_cast<int32_t>(presentAttachment.extent.height), 1};
+        region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.dstOffsets[1] = {static_cast<int32_t>(readback.extent.width), static_cast<int32_t>(readback.extent.height), 1};
+
+        VkBlitImageInfo2 blit{VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2};
+        blit.srcImage = presentAttachment.image;
+        blit.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        blit.dstImage = readback.image;
+        blit.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        blit.regionCount = 1;
+        blit.pRegions = &region;
+        blit.filter = VK_FILTER_LINEAR;
+
+        vkCmdBlitImage2(m_currentCommandBuffer, &blit);
+
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_BLIT_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+
+        vkCmdPipelineBarrier2(m_currentCommandBuffer, &dependencyInfo);
+
+        VkBufferImageCopy copy{};
+        copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        copy.imageExtent = {readback.extent.width, readback.extent.height, 1};
+
+        vkCmdCopyImageToBuffer(m_currentCommandBuffer, readback.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            readback.buffer, 1, &copy);
+
+        VkBufferMemoryBarrier2 toHost{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+        toHost.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+        toHost.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        toHost.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+        toHost.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+        toHost.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toHost.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toHost.buffer = readback.buffer;
+        toHost.size = VK_WHOLE_SIZE;
+
+        VkDependencyInfo hostDependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        hostDependency.bufferMemoryBarrierCount = 1;
+        hostDependency.pBufferMemoryBarriers = &toHost;
+
+        vkCmdPipelineBarrier2(m_currentCommandBuffer, &hostDependency);
+    }
+
+    void RenderGraphImpl::deliverReadback(uint32_t frameIndex, bool invoke)
+    {
+        Readback& readback = m_readbacks[frameIndex];
+        const VmaAllocator allocator = m_context.impl()->getAllocator();
+
+        if (invoke && readback.onReady && readback.mapped != nullptr)
+        {
+            vmaInvalidateAllocation(allocator, readback.bufferAllocation, 0, VK_WHOLE_SIZE);
+
+            graphics::ImageData image{};
+            image.width = readback.extent.width;
+            image.height = readback.extent.height;
+            image.format = graphics::TextureFormat::RGBA8Srgb;
+            image.pixels = std::span<const std::byte>(static_cast<const std::byte*>(readback.mapped),
+                static_cast<size_t>(readback.extent.width) * readback.extent.height * 4);
+
+            readback.onReady(image);
+        }
+
+        if (readback.image != VK_NULL_HANDLE)
+            vmaDestroyImage(allocator, readback.image, readback.imageAllocation);
+
+        if (readback.buffer != VK_NULL_HANDLE)
+            vmaDestroyBuffer(allocator, readback.buffer, readback.bufferAllocation);
+
+        readback = Readback{};
     }
 
     void RenderGraphImpl::setPresentSource(std::string attachmentName)
@@ -1256,6 +1656,8 @@ namespace vela::backend
             return;
 
         m_currentRenderGraphPass = &registered;
+
+        writePassTimestamp(true);
 
         m_boundMaterial = nullptr;
         m_boundPipeline = VK_NULL_HANDLE;
@@ -1280,6 +1682,7 @@ namespace vela::backend
 
             registered.pass->record(computeContext);
 
+            writePassTimestamp(false);
             m_currentRenderGraphPass = nullptr;
 
             return;
@@ -1306,7 +1709,7 @@ namespace vela::backend
 
             if(outputAttachmentIt == m_attachments.end())
             {
-                std::cerr << "Failed to find " << colorOutput.name << " attachment\n";
+                detail::LogLine(LogLevel::Error) << "Failed to find " << colorOutput.name << " attachment\n";
                 continue;
             }
 
@@ -1316,6 +1719,17 @@ namespace vela::backend
             renderingAttachmentInfo.loadOp = colorOutput.load;
             renderingAttachmentInfo.storeOp = colorOutput.store;
             renderingAttachmentInfo.clearValue = colorOutput.clear;
+
+            if(const auto resolveIt = m_attachments.find(colorOutput.resolveTarget);
+                !colorOutput.resolveTarget.empty() && resolveIt != m_attachments.end())
+            {
+                renderingAttachmentInfo.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
+                renderingAttachmentInfo.resolveImageView = resolveIt->second.view;
+                renderingAttachmentInfo.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+                transitionAttachment(colorOutput.resolveTarget, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, memoryBarriers);
+            }
 
             colorRenderingAttachmentInfos.push_back(renderingAttachmentInfo);
 
@@ -1330,7 +1744,7 @@ namespace vela::backend
             const auto outputAttachmentIt = m_attachments.find(depthOutput.name);
 
             if(outputAttachmentIt == m_attachments.end())
-                std::cerr << "Failed to find " << depthOutput.name << " attachment\n";
+                detail::LogLine(LogLevel::Error) << "Failed to find " << depthOutput.name << " attachment\n";
             else
             {
                 depthRenderingAttachmentInfo.imageView = outputAttachmentIt->second.view;
@@ -1338,6 +1752,21 @@ namespace vela::backend
                 depthRenderingAttachmentInfo.loadOp = depthOutput.load;
                 depthRenderingAttachmentInfo.storeOp = depthOutput.store;
                 depthRenderingAttachmentInfo.clearValue = depthOutput.clear;
+
+                if(const auto resolveIt = m_attachments.find(depthOutput.resolveTarget);
+                    !depthOutput.resolveTarget.empty() && resolveIt != m_attachments.end())
+                {
+                    // Sample zero is the one depth resolve mode every Vulkan 1.2+ device supports
+                    depthRenderingAttachmentInfo.resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
+                    depthRenderingAttachmentInfo.resolveImageView = resolveIt->second.view;
+                    depthRenderingAttachmentInfo.resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+
+                    // Depth resolves run in the color attachment output stage
+                    transitionAttachment(depthOutput.resolveTarget, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        memoryBarriers);
+                }
 
                 renderingInfo.pDepthAttachment = &depthRenderingAttachmentInfo;
 
@@ -1352,7 +1781,7 @@ namespace vela::backend
         {
             if(!m_attachments.contains(input.name))
             {
-                std::cerr << "Failed to find " << input.name << " attachment\n";
+                detail::LogLine(LogLevel::Error) << "Failed to find " << input.name << " attachment\n";
                 continue;
             }
 
@@ -1402,13 +1831,21 @@ namespace vela::backend
         if(m_currentPassOpenedRendering)
             vkCmdEndRendering(m_currentCommandBuffer);
 
+        writePassTimestamp(false);
+
         m_currentPassOpenedRendering = false;
         m_currentRenderGraphPass = nullptr;
     }
 
     void RenderGraphImpl::recreateSwapchainResources()
     {
+        // Minimised: keep the old swapchain and skip frames until the window has a size again
+        if (!m_context.impl()->isSurfaceDrawable())
+            return;
+
         vkDeviceWaitIdle(m_device);
+
+        const VkExtent2D previousExtent = m_context.impl()->getSwapchainExtent();
 
         m_context.impl()->recreateSwapchain();
 
@@ -1424,6 +1861,12 @@ namespace vela::backend
         m_renderFinished.clear();
 
         createSwapchainSyncObjects();
+
+        // Only the present mode changed: every attachment still has the right size
+        const VkExtent2D extent = m_context.impl()->getSwapchainExtent();
+
+        if (extent.width == previousExtent.width && extent.height == previousExtent.height)
+            return;
 
         destroyAllAttachments(true);
 
@@ -1624,6 +2067,9 @@ namespace vela::backend
         for (const auto& pools : m_transientPools)
             for (VkDescriptorPool pool : pools)
                 vkDestroyDescriptorPool(m_device, pool, nullptr);
+
+        for (uint32_t frame = 0; frame < k_framesInFlight; ++frame)
+            deliverReadback(frame, false);
 
         destroyAllAttachments();
         destroyAllGraphBuffers();

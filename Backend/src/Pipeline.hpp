@@ -54,6 +54,8 @@ namespace vela::backend
         bool depthWrite{true};
         graphics::BlendMode blend{graphics::BlendMode::Opaque};
         VkCompareOp depthCompare{VK_COMPARE_OP_LESS};
+        float depthBiasConstant{0.0f};
+        float depthBiasSlope{0.0f};
     };
 
     class PipelineCache

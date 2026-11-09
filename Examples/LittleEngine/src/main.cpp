@@ -121,7 +121,8 @@ int main(int argc, char** argv)
 
     vela::graphics::RenderGraph graph = std::move(graphResult).value();
 
-    if (auto added = graph.addPass("scene", std::make_unique<little::LitPass>(scene)); !added)
+    if (auto added = graph.addPass("scene",
+            std::make_unique<little::LitPass>(scene, std::min(4u, context.getDeviceInfo().maxMsaaSamples))); !added)
         return fail(added.error());
 
     if (auto added = graph.addPass("ui", ui.createPass("color")); !added)
@@ -163,9 +164,6 @@ int main(int argc, char** argv)
 
     vela::graphics::DynamicBuffer lightBuffer = std::move(lightBufferResult).value();
 
-    if (auto updated = lightBuffer.update(std::as_bytes(std::span(&lightViewProjection, 1))); !updated)
-        return fail(updated.error());
-
     for (vela::graphics::Material& material : model.materials)
         if (auto bound = material.setStorageBuffer(1, lightBuffer); !bound)
             return fail(bound.error());
@@ -177,6 +175,7 @@ int main(int argc, char** argv)
     vela::core::Event event{};
 
     bool fullscreen = false;
+    bool uiVisible = true;
 
     auto lastStatPrint = std::chrono::steady_clock::now();
     uint32_t statFrames = 0;
@@ -202,6 +201,16 @@ int main(int argc, char** argv)
                 window.setMode(fullscreen
                     ? vela::core::WindowMode::ExclusiveFullscreen
                     : vela::core::WindowMode::Windowed);
+            }
+
+            // Hides the UI by taking its pass out of the graph, and brings it back by adding a new one
+            if (event.type == vela::core::EventType::KeyReleased && event.key == vela::core::Key::F2)
+            {
+                uiVisible = !uiVisible;
+
+                if (auto changed = uiVisible ? graph.addPass("ui", ui.createPass("color")) : graph.removePass("ui");
+                    !changed)
+                    return fail(changed.error());
             }
         }
 
@@ -230,6 +239,7 @@ int main(int argc, char** argv)
 
             std::cout << "fps " << static_cast<uint32_t>(statFrames / seconds)
                       << " | cpu " << statCpuMs / static_cast<float>(statFrames) << " ms"
+                      << " (wait " << stats.cpuWaitMs << ")"
                       << " | gpu " << statGpuMs / static_cast<float>(statFrames) << " ms"
                       << " | draws " << model.instances.size()
                       << " | vram " << memory.deviceBytesUsed / (1024 * 1024) << " / "
@@ -246,8 +256,12 @@ int main(int argc, char** argv)
         ImGui::Begin("LittleEngine");
         ImGui::Text("%s", context.getDeviceInfo().name.c_str());
         ImGui::Separator();
-        ImGui::Text("cpu %.2f ms", stats.cpuFrameMs);
+        ImGui::Text("cpu %.2f ms (wait %.2f, work %.2f)", stats.cpuFrameMs, stats.cpuWaitMs, stats.cpuWorkMs);
         ImGui::Text("gpu %.2f ms", stats.gpuTimingValid ? stats.gpuFrameMs : 0.0f);
+
+        for (const vela::graphics::PassTiming& timing : graph.getPassTimings())
+            ImGui::Text("  %-8s %.2f ms", timing.name.c_str(), timing.gpuMs);
+
         ImGui::Text("fps %.0f", deltaTime > 0.0f ? 1.0f / deltaTime : 0.0f);
         ImGui::Separator();
         ImGui::Text("draws     %zu", model.instances.size());
@@ -277,6 +291,11 @@ int main(int argc, char** argv)
         ImGui::Render();
 
         graph.setView(camera.camera().getViewMatrix(), camera.camera().getProjectionMatrix());
+
+        // A DynamicBuffer holds one copy per frame, so it is written every frame it is drawn with.
+        // Writing it before execute() lands in the frame execute() records
+        if (auto updated = lightBuffer.update(std::as_bytes(std::span(&lightViewProjection, 1))); !updated)
+            return fail(updated.error());
 
         if (auto frame = graph.execute(); !frame)
             return fail(frame.error());

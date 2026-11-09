@@ -119,6 +119,14 @@ namespace vela::core
         m_windowBackend->setCursorShape(m_nativeWindow, shape);
     }
 
+    Status Window::setRawMouseMotion(bool enabled)
+    {
+        if (!m_windowBackend->setRawMouseMotion(m_nativeWindow, enabled))
+            return Error{ErrorCode::InvalidArgument, "Raw mouse motion is not supported on this platform"};
+
+        return {};
+    }
+
     void Window::setCursorMode(CursorMode mode)
     {
         m_windowBackend->setCursorMode(m_nativeWindow, mode);

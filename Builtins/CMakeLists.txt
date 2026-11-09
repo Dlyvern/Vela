@@ -11,10 +11,14 @@ add_library(Vela::Builtins ALIAS VelaBuiltins)
 
 vela_public_includes(VelaBuiltins PUBLIC)
 
+# VelaBackend implements the Graphics API the built-ins call, so it must follow VelaBuiltins on the link line
+# whatever order the application lists Vela's targets in
 target_link_libraries(VelaBuiltins
     PUBLIC
     VelaGraphics
     VelaFoundation
+    PRIVATE
+    VelaBackend
 )
 
 vela_install_target(VelaBuiltins

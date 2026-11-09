@@ -14,6 +14,7 @@
 #include "Vela/Math/Vector.hpp"
 #include "Vela/Graphics/Pass.hpp"
 #include "Vela/Graphics/FrameStats.hpp"
+#include "Vela/Graphics/ImageData.hpp"
 
 
 
@@ -22,6 +23,7 @@
 #include <vector>
 #include <unordered_map>
 #include <array>
+#include <functional>
 
 
 namespace vela::core
@@ -53,7 +55,8 @@ namespace vela::backend
         void draw(const graphics::Mesh& mesh, const graphics::Material& material, const void* constants, uint32_t size);
         void bind(const graphics::Material& material);
         void bindVertexBuffer(const graphics::DynamicBuffer& buffer);
-        void bindAttachment(uint32_t slot, const std::string& attachmentName);
+        // sampler: null for the default attachment sampler
+        void bindAttachment(uint32_t slot, const std::string& attachmentName, const graphics::SamplerDescription* sampler);
         void bindTexture(uint32_t slot, const graphics::Texture& texture);
         void setConstantBytes(const void* data, uint32_t size);
         void bindIndexBuffer(const graphics::DynamicBuffer& buffer);
@@ -65,9 +68,12 @@ namespace vela::backend
         void setScissor(int32_t x, int32_t y, uint32_t width, uint32_t height);
 
         void setPresentSource(std::string attachmentName);
+        Status readbackFrame(std::function<void(const graphics::ImageData&)> onReady);
 
         Status addPass(const std::string& name, std::unique_ptr<graphics::Pass> pass);
         Status addComputePass(const std::string& name, std::unique_ptr<graphics::ComputePass> pass);
+        Status removePass(const std::string& name);
+        Status redescribePass(const std::string& name);
 
         void bindComputeProgram(const graphics::ComputeProgram& program);
         void bindStorageBuffer(const graphics::ComputeProgram& program, uint32_t slot, const std::string& bufferName);
@@ -77,6 +83,7 @@ namespace vela::backend
         void setView(const math::Mat4& view, const math::Mat4& projection);
         
         graphics::FrameStats getFrameStats() const;
+        const std::vector<graphics::PassTiming>& getPassTimings() const;
 
         static constexpr uint32_t getFramesInFlight()
         {
@@ -91,6 +98,7 @@ namespace vela::backend
 
         struct RegisteredPass
         {
+            std::string name;
             std::unique_ptr<Pass> pass;
             PassDeclaration declaration;
             PassFormats formats;
@@ -132,7 +140,8 @@ namespace vela::backend
 
         static constexpr uint32_t k_framesInFlight = FrameConstants::k_framesInFlight;
 
-        Pass& addRenderGraphPass(const std::string& name, std::unique_ptr<Pass> pass);
+        Status addRenderGraphPass(const std::string& name, std::unique_ptr<Pass> pass);
+        Status validateDeclaration(const std::string& passName, const PassDeclaration& declaration) const;
 
         void buildRenderGraphOrder();
         void cullRenderGraphOrder(const std::vector<std::vector<size_t>>& successors);
@@ -216,6 +225,38 @@ namespace vela::backend
         VkQueryPool m_queryPool{VK_NULL_HANDLE};
 
         graphics::FrameStats m_frameStats;
+        float m_frameWaitMs{0.0f};
+
+        /*
+            Per frame in flight: queries 0 and 1 bracket the frame, then two per timed pass in execution order.
+            The names of the passes timed in each frame are kept until its results are read back
+        */
+        static constexpr uint32_t k_maxTimedPasses{64};
+        static constexpr uint32_t k_queriesPerFrame{2 + 2 * k_maxTimedPasses};
+
+        std::array<std::vector<std::string>, k_framesInFlight> m_timedPassNames;
+        std::vector<graphics::PassTiming> m_passTimings;
+
+        void readTimestamps();
+
+        // A capture requested by readbackFrame(): recorded into one frame, delivered once that frame's fence signals
+        struct Readback
+        {
+            VkImage image{VK_NULL_HANDLE};
+            VmaAllocation imageAllocation{VK_NULL_HANDLE};
+            VkBuffer buffer{VK_NULL_HANDLE};
+            VmaAllocation bufferAllocation{VK_NULL_HANDLE};
+            void* mapped{nullptr};
+            VkExtent2D extent{};
+            std::function<void(const graphics::ImageData&)> onReady;
+        };
+
+        std::function<void(const graphics::ImageData&)> m_pendingReadback;
+        std::array<Readback, k_framesInFlight> m_readbacks{};
+
+        void recordReadback(const Attachment& presentAttachment);
+        void deliverReadback(uint32_t frameIndex, bool invoke);
+        void writePassTimestamp(bool begin);
 
         float m_timestampPeriod{0.0f};
         bool m_gpuTimingSupported{false};

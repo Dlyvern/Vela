@@ -12,7 +12,11 @@ namespace vela::core
         WideLines,
         Bindless,
         RayTracing,
-        MeshShaders
+        MeshShaders,
+
+        // BC1-BC7 block-compressed textures (TextureFormat::BC*). Enabled automatically whenever the device
+        // supports it, whether requested or not; without it Texture::create rejects BC formats
+        TextureCompressionBC
     };
 
     constexpr const char* toString(Feature feature)
@@ -25,6 +29,7 @@ namespace vela::core
             case Feature::Bindless:          return "Bindless";
             case Feature::RayTracing:        return "RayTracing";
             case Feature::MeshShaders:       return "MeshShaders";
+            case Feature::TextureCompressionBC: return "TextureCompressionBC";
         }
 
         return "Unknown";

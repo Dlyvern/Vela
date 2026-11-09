@@ -18,6 +18,8 @@ namespace
         output.scale = slot.scale;
         output.size.height = slot.size.height;
         output.size.width = slot.size.width;
+        output.samples = static_cast<VkSampleCountFlagBits>(slot.samples);
+        output.resolveTarget = slot.resolveTarget;
 
         return output;
     }
@@ -87,7 +89,15 @@ namespace vela::graphics
         if(!m_graph)
             return;
 
-        m_graph->bindAttachment(slot, attachmentName);
+        m_graph->bindAttachment(slot, attachmentName, nullptr);
+    }
+
+    void PassRecorder::bindAttachment(uint32_t slot, const std::string& attachmentName, const SamplerDescription& sampler)
+    {
+        if(!m_graph)
+            return;
+
+        m_graph->bindAttachment(slot, attachmentName, &sampler);
     }
 
     void PassRecorder::setConstants(const math::Mat4& value)

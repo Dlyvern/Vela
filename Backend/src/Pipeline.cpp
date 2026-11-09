@@ -1,4 +1,5 @@
 #include "Pipeline.hpp"
+#include "Vela/Log.hpp"
 
 #include <algorithm>
 #include <stdexcept>
@@ -221,9 +222,13 @@ namespace vela::backend
         hash = hashValue(description.depthWrite, hash);
         hash = hashValue(description.depthCompare, hash);
         hash = hashValue(description.blend, hash);
+        hash = hashValue(description.depthBiasConstant, hash);
+        hash = hashValue(description.depthBiasSlope, hash);
 
         for (VkFormat format : formats.colorFormats)
             hash = hashValue(format, hash);
+
+        hash = hashValue(formats.samples, hash);
 
         return hashValue(formats.depthFormat, hash);
     }
@@ -291,9 +296,12 @@ namespace vela::backend
         rasterizer.cullMode = description.cullMode;
         rasterizer.frontFace = description.frontFace;
         rasterizer.lineWidth = 1.0f;
+        rasterizer.depthBiasEnable = description.depthBiasConstant != 0.0f || description.depthBiasSlope != 0.0f;
+        rasterizer.depthBiasConstantFactor = description.depthBiasConstant;
+        rasterizer.depthBiasSlopeFactor = description.depthBiasSlope;
 
         VkPipelineMultisampleStateCreateInfo multisample{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-        multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        multisample.rasterizationSamples = formats.samples;
 
         VkPipelineColorBlendAttachmentState blendAttachment{};
         blendAttachment.colorWriteMask =
@@ -363,7 +371,7 @@ namespace vela::backend
 
         VkPipeline pipeline = create(description, formats);
         m_pipelines.emplace(key, pipeline);
-        std::cout << "New pipeline was created with " << key << " key\n";
+        detail::LogLine(LogLevel::Debug) << "New pipeline was created with " << key << " key\n";
 
         return pipeline;
     }

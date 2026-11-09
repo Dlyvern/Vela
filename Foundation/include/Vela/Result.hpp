@@ -31,8 +31,12 @@ namespace vela
         std::string message;
     };
 
+    /*
+        Either a value or an Error. Move-only when T is. [[nodiscard]] as a type, so dropping a returned
+        Result (or Status) is a compiler warning: an ignored failure is almost always a bug
+    */
     template<typename T>
-    class Result
+    class [[nodiscard]] Result
     {
     public:
         Result(T&& value) noexcept : m_value(std::move(value)) {}
@@ -61,8 +65,9 @@ namespace vela
         Error m_error;
     };
 
+    // The no-value form: an operation that either worked or explains why not
     template<>
-    class Result<void>
+    class [[nodiscard]] Result<void>
     {
     public:
         Result() noexcept : m_succeeded(true) {}

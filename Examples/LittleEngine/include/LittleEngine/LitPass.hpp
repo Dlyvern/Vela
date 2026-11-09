@@ -9,7 +9,9 @@ namespace little
     class LitPass : public vela::graphics::Pass
     {
     public:
-        explicit LitPass(const vela::graphics::RenderScene& renderScene);
+        // samples: MSAA samples per pixel (1 = off). With MSAA the pass draws into "colorMsaa"/"depthMsaa"
+        // and resolves them into "color"/"depth", so later passes see the same names either way
+        LitPass(const vela::graphics::RenderScene& renderScene, uint32_t samples);
 
         vela::graphics::PassDescription describe() const override;
 
@@ -17,6 +19,7 @@ namespace little
     private:
         const vela::graphics::RenderScene* m_renderScene{nullptr};
         vela::graphics::ClearValue m_clearValue{0.1f, 0.2f, 0.4f, 1.0f};
+        uint32_t m_samples{1};
     };
 } //namespace little 
 

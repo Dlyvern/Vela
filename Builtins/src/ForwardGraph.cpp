@@ -9,6 +9,12 @@ namespace vela::builtins
     Result<graphics::RenderGraph> forwardGraph(core::Context& context,
         const graphics::RenderScene& renderScene)
     {
+        return forwardGraph(context, renderScene, ScenePassOptions{});
+    }
+
+    Result<graphics::RenderGraph> forwardGraph(core::Context& context,
+        const graphics::RenderScene& renderScene, const ScenePassOptions& options)
+    {
         auto graphResult = graphics::RenderGraph::create(context);
 
         if (!graphResult)
@@ -16,10 +22,10 @@ namespace vela::builtins
 
         graphics::RenderGraph graph = std::move(graphResult).value();
 
-        if (auto added = graph.addPass("scene", std::make_unique<ScenePass>(renderScene)); !added)
+        if (auto added = graph.addPass("scene", std::make_unique<ScenePass>(renderScene, options)); !added)
             return added.error();
 
-        graph.setPresentSource("color");
+        graph.setPresentSource(k_sceneColorAttachment);
 
         return std::move(graph);
     }

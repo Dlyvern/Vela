@@ -377,7 +377,14 @@ namespace little
             samplerDescription.anisotropy = 16.0f;
             samplerDescription.mipMode = vela::graphics::MipMode::Linear;
 
-            auto texture = vela::graphics::Texture::create(context, decoded[index].data(), samplerDescription);
+            const vela::graphics::ImageData imageData = decoded[index].data();
+
+            // Decoded PNG/JPEG images have a single level: let the GPU build the mip chain.
+            // KTX2 files bring their own levels, and block-compressed data can't be blitted
+            vela::graphics::TextureOptions textureOptions{};
+            textureOptions.generateMips = imageData.levels == 1 && !vela::graphics::isBlockFormat(imageData.format);
+
+            auto texture = vela::graphics::Texture::create(context, imageData, samplerDescription, textureOptions);
 
             if (!texture)
             {

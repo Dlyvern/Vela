@@ -2,6 +2,7 @@
 #define VELA_CORE_CONTEXT_HPP
 
 #include <memory>
+#include <vector>
 
 #include "Vela/Core/IWindowBackend.hpp"
 #include "Vela/Core/ContextPreferences.hpp"
@@ -36,6 +37,19 @@ namespace vela::core
         [[nodiscard]] MemoryStats getMemoryStats() const;
         [[nodiscard]] const DeviceInfo& getDeviceInfo() const;
         [[nodiscard]] SwapchainInfo getSwapchainInfo() const;
+
+        // Present modes the attached window's surface supports, as VSync values. VSync::On is always one of them.
+        // Returns: the supported modes, or only VSync::On before attach().
+        [[nodiscard]] std::vector<VSync> getSupportedVSync() const;
+
+        /*
+            Changes how frames are presented without recreating the context. The next RenderGraph::execute()
+            recreates the swapchain; attachments are kept when the window size did not change.
+            An unsupported mode falls back as described on VSync; getSwapchainInfo() reports the result.
+            vsync:   the requested mode.
+            Returns: an error before attach().
+        */
+        [[nodiscard]] Status setVSync(VSync vsync);
         [[nodiscard]] uint32_t getValidationMessageCount() const;
 
         void waitIdle();

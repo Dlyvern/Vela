@@ -36,7 +36,11 @@ namespace vela::backend
         ~DynamicBufferImpl();
 
     private:
-        static constexpr uint32_t k_slotCount = FrameConstants::k_framesInFlight;
+        /*
+            One slot per frame in flight, plus the one being written for the next frame. update() between two
+            execute() calls then never touches a slot the GPU may still be reading
+        */
+        static constexpr uint32_t k_slotCount = FrameConstants::k_framesInFlight + 1;
 
         struct Slot
         {

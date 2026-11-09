@@ -15,12 +15,19 @@ namespace vela::core
         Integrated
     };
 
+    /*
+        How frames are presented. Not every mode exists everywhere: Wayland, for example, has no Off.
+        A missing mode falls back to the closest one that exists:
+        Off -> Fast -> On, Fast -> On, Adaptive -> On, LatestReady -> On. On always exists.
+        SwapchainInfo::actualVSync reports what was chosen, Context::getSupportedVSync() what exists
+    */
     enum class VSync : uint8_t
     {
-        Off = 0,
-        On,
-        Adaptive,
-        Fast
+        Off = 0,     // immediate: no waiting, may tear
+        On,          // fifo: waits for vertical blank, never tears
+        Adaptive,    // fifo relaxed: like On, but a late frame is shown at once and may tear
+        Fast,        // mailbox: no waiting and no tearing; the newest finished frame is shown at vertical blank
+        LatestReady  // fifo latest ready: like On, but at vertical blank shows the newest finished frame and skips older ones
     };
 
     struct Version

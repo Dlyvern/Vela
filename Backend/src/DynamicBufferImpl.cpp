@@ -1,4 +1,5 @@
 #include "DynamicBufferImpl.hpp"
+#include "Vela/Log.hpp"
 
 #include "ContextImpl.hpp"
 #include "DeletionQueue.hpp"
@@ -58,7 +59,7 @@ namespace vela::backend
             if(VkResult result = vmaCreateBuffer(m_allocator, &bufferCI, &allocationCI, &buffer, &allocation, &allocationInfo);
                 result != VK_SUCCESS)
             {
-                std::cerr << "Failed to create dynamic buffer\n";
+                detail::LogLine(LogLevel::Error) << "Failed to create dynamic buffer\n";
                 return false;
             }
 

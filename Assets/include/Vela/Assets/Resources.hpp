@@ -11,34 +11,69 @@
 
 #include <filesystem>
 #include <string>
-#include <stdexcept>
+#include <system_error>
 #include <cstdint>
 
 namespace vela::assets::resources
 {
     // Absolute path of the directory containing the running executable.
-    inline std::filesystem::path executableDirectory()
+    // Never throws.
+    // Returns: the directory, or an empty path if the platform could not report the executable's location.
+    inline std::filesystem::path executableDirectory() noexcept
     {
+        std::error_code error;
+
     #if defined(_WIN32)
-        wchar_t buf[MAX_PATH];
-        GetModuleFileNameW(nullptr, buf, MAX_PATH);
-        return std::filesystem::path(buf).parent_path();
+        std::wstring buffer(MAX_PATH, L'\0');
+
+        while (true)
+        {
+            const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+
+            if (length == 0)
+                return {};
+
+            if (length < buffer.size())
+            {
+                buffer.resize(length);
+                break;
+            }
+
+            buffer.resize(buffer.size() * 2);
+        }
+
+        const std::filesystem::path executable = std::filesystem::path(buffer);
     #elif defined(__APPLE__)
-        char buf[1024];
-        uint32_t size = sizeof(buf);
-        if (_NSGetExecutablePath(buf, &size) != 0)
-            throw std::runtime_error("Executable path buffer too small");
-        return std::filesystem::canonical(buf).parent_path();
+        uint32_t size = 0;
+        _NSGetExecutablePath(nullptr, &size);
+
+        std::string buffer(size, '\0');
+
+        if (_NSGetExecutablePath(buffer.data(), &size) != 0)
+            return {};
+
+        const std::filesystem::path executable = std::filesystem::canonical(buffer.c_str(), error);
     #else
-        return std::filesystem::canonical("/proc/self/exe").parent_path();
+        const std::filesystem::path executable = std::filesystem::canonical("/proc/self/exe", error);
     #endif
+
+        if (error || executable.empty())
+            return {};
+
+        return executable.parent_path();
     }
 
-    // Resolve a path relative to the executable directory.
-    // Example: find("shaders/my_shader.vert.spv")
-    inline std::filesystem::path find(const std::string& relativePath)
+    // Resolves a path relative to the executable directory. Never throws.
+    // relativePath: path below the executable directory, e.g. "shaders/my_shader.vert.spv".
+    // Returns:      the absolute path, or an empty path if executableDirectory() failed.
+    inline std::filesystem::path find(const std::string& relativePath) noexcept
     {
-        return executableDirectory() / relativePath;
+        const std::filesystem::path directory = executableDirectory();
+
+        if (directory.empty())
+            return {};
+
+        return directory / relativePath;
     }
 }
 

@@ -6,6 +6,7 @@
 #include "Vela/Core/ContextPreferences.hpp"
 #include "Vela/Core/MemoryStats.hpp"
 #include "Vela/Core/DeviceInfo.hpp"
+#include "Vela/Result.hpp"
 
 #include "vk_mem_alloc.h"
 
@@ -15,6 +16,7 @@
 #include "DeletionQueue.hpp"
 #include "Features.hpp"
 
+#include <deque>
 #include <optional>
 #include <memory>
 
@@ -59,6 +61,9 @@ namespace vela::backend
 
         bool isSwapchainStale() const;
 
+        // False while the window is minimised: the surface has a zero extent and no swapchain can be created for it
+        bool isSurfaceDrawable() const;
+
         void pickPhysicalDevice();
         void createDevice();
         void createSwapchain();
@@ -70,11 +75,28 @@ namespace vela::backend
         core::MemoryStats getMemoryStats() const;
         const core::DeviceInfo& getDeviceInfo() const;
         core::SwapchainInfo getSwapchainInfo() const;
+        std::vector<core::VSync> getSupportedVSync() const;
+        Status setVSync(core::VSync vsync);
 
         const VkPhysicalDeviceProperties& getPhysicalDeviceProperties() const;
         uint32_t getGraphicsTimestampValidBits() const;
 
         DeletionQueue& getDeletionQueue();
+
+        VkPhysicalDevice getPhysicalDevice() const;
+
+        /*
+            Submits a recorded upload command buffer (from the graphics command pool) to the graphics queue without
+            waiting for it. The command buffer and staging buffer are freed once the upload's fence signals.
+            Later submissions on the queue are ordered after it by the barriers the upload records, so frames
+            need no extra synchronization. Blocks only while more than k_maxPendingUploadBytes of staging is
+            still in flight, to bound memory while loading many textures
+        */
+        Status submitUpload(VkCommandBuffer commandBuffer, VkBuffer stagingBuffer, VmaAllocation stagingAllocation,
+            VkDeviceSize stagingBytes);
+
+        // Frees uploads that finished. wait: block until every pending upload finished first
+        void reclaimUploads(bool wait);
 
         uint32_t getValidationMessageCount() const;
 
@@ -94,6 +116,22 @@ namespace vela::backend
         };
 
         std::unique_ptr<DeletionQueue> m_deletionQueue{nullptr};
+
+        struct PendingUpload
+        {
+            VkFence fence{VK_NULL_HANDLE};
+            VkCommandBuffer commandBuffer{VK_NULL_HANDLE};
+            VkBuffer stagingBuffer{VK_NULL_HANDLE};
+            VmaAllocation stagingAllocation{VK_NULL_HANDLE};
+            VkDeviceSize stagingBytes{0};
+        };
+
+        static constexpr VkDeviceSize k_maxPendingUploadBytes{256ull * 1024 * 1024};
+
+        std::deque<PendingUpload> m_pendingUploads;
+        VkDeviceSize m_pendingUploadBytes{0};
+
+        void releaseUpload(const PendingUpload& upload);
 
         void createInstance(core::IWindowBackend& windowBackend);
         void createDebugMessenger();
@@ -134,6 +172,13 @@ namespace vela::backend
         VkFormat m_swapchainFormat{VK_FORMAT_UNDEFINED};
         VkExtent2D m_swapchainExtent{};
         VkPresentModeKHR m_swapchainPresentMode{VK_PRESENT_MODE_FIFO_KHR};
+
+        // Set by setVSync(): the swapchain must be recreated with a new present mode
+        bool m_presentModeChanged{false};
+        bool m_fifoLatestReadyEnabled{false};
+
+        std::vector<VkPresentModeKHR> surfacePresentModes() const;
+        VkPresentModeKHR choosePresentMode() const;
 
         std::vector<VkImage> m_swapchainImages;
         std::vector<VkImageView> m_swapchainImageViews;

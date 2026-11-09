@@ -37,8 +37,25 @@ namespace vela::graphics
         bool depthWrite{true};
         DepthCompare depthCompare{DepthCompare::Less};
         BlendMode blend{BlendMode::Opaque};
+
+        /*
+            Depth bias applied to every fragment before the depth test and write, as in vkCmdSetDepthBias:
+            bias = depthBiasConstant * r + depthBiasSlope * max depth slope, where r is the smallest
+            resolvable depth difference. The usual cure for shadow acne in shadow-map passes.
+            Both 0 (the default) disables it
+        */
+        float depthBiasConstant{0.0f};
+        float depthBiasSlope{0.0f};
     };
 
+    /*
+        Everything a material is built from. Material::create() copies the shader code, so the spans only need
+        to stay valid during that call. getMaterialDescription() returns spans into the material's own copies.
+        Shader resources are found by SPIR-V reflection: set 0 is Vela's camera, set 1 the material's textures
+        and storage buffers, set 2 the pass inputs. Push constants: the two stages' blocks are merged into one
+        range of the larger size, visible to every stage that declares one, so both stages must agree on the
+        layout of the bytes they share (declare the same block in both, or let one stage use a prefix of it).
+    */
     struct MaterialDescription
     {
         std::span<const uint32_t> vertexShader;

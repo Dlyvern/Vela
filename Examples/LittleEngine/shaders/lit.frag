@@ -7,7 +7,7 @@ layout(location = 2) in vec4 inLightSpacePosition;
 layout(location = 0) out vec4 outColor;
 
 layout(set = 1, binding = 0) uniform sampler2D inAlbedo;
-layout(set = 2, binding = 0) uniform sampler2D inShadow;
+layout(set = 2, binding = 0) uniform sampler2DShadow inShadow;
 
 void main()
 {
@@ -34,14 +34,6 @@ void main()
     shadowCoord.xy =
         shadowCoord.xy * 0.5 + 0.5;
 
-    float shadowDepth =
-        texture(inShadow, shadowCoord.xy).r;
-
-    float currentDepth =
-        shadowCoord.z;
-
-    const float bias = 0.005;
-
     float shadow = 1.0;
 
     bool insideLightFrustum =
@@ -49,9 +41,17 @@ void main()
         shadowCoord.y >= 0.0 && shadowCoord.y <= 1.0 &&
         shadowCoord.z >= 0.0 && shadowCoord.z <= 1.0;
 
-    if (insideLightFrustum && currentDepth - bias > shadowDepth)
+    // 3x3 taps of a comparison sampler; the shadow pass applies the depth bias
+    if (insideLightFrustum)
     {
-        shadow = 0.0;
+        const vec2 texel = 1.0 / vec2(textureSize(inShadow, 0));
+        float lit = 0.0;
+
+        for (int x = -1; x <= 1; ++x)
+            for (int y = -1; y <= 1; ++y)
+                lit += texture(inShadow, vec3(shadowCoord.xy + vec2(x, y) * texel, shadowCoord.z));
+
+        shadow = lit / 9.0;
     }
 
     float lighting =

@@ -51,6 +51,16 @@ namespace vela::core
         return m_contextImpl->getSwapchainInfo();
     }
 
+    std::vector<VSync> Context::getSupportedVSync() const
+    {
+        return m_contextImpl->getSupportedVSync();
+    }
+
+    Status Context::setVSync(VSync vsync)
+    {
+        return m_contextImpl->setVSync(vsync);
+    }
+
     uint32_t Context::getValidationMessageCount() const
     {
         return m_contextImpl->getValidationMessageCount();

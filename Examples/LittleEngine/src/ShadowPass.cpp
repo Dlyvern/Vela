@@ -21,7 +21,11 @@ namespace little
         const std::vector<uint32_t> shadowVert = std::move(shadowVertResult).value();
         const std::vector<uint32_t> staticFrag = std::move(staticFragResult).value();
 
+        // Slope-scaled depth bias instead of a constant offset in the lit shader: no shadow acne on surfaces
+        // at grazing angles to the light, and less peter-panning on the rest
         vela::graphics::RenderState renderState{};
+        renderState.depthBiasConstant = 1.25f;
+        renderState.depthBiasSlope = 1.75f;
         materialDescription.renderState = renderState;
         materialDescription.vertexLayout = vela::graphics::StaticVertex::layout();
         materialDescription.vertexShader = shadowVert;

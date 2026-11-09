@@ -36,9 +36,24 @@ namespace vela::graphics
         return m_impl->addComputePass(name, std::move(pass));
     }
 
+    Status RenderGraph::removePass(const std::string& name)
+    {
+        return m_impl->removePass(name);
+    }
+
+    Status RenderGraph::redescribePass(const std::string& name)
+    {
+        return m_impl->redescribePass(name);
+    }
+
     FrameStats RenderGraph::getFrameStats() const
     {
         return m_impl->getFrameStats();
+    }
+
+    const std::vector<PassTiming>& RenderGraph::getPassTimings() const
+    {
+        return m_impl->getPassTimings();
     }
 
     void RenderGraph::setPresentSource(const std::string& attachmentName)
@@ -46,9 +61,22 @@ namespace vela::graphics
         m_impl->setPresentSource(attachmentName);
     }
 
+    Status RenderGraph::readbackFrame(std::function<void(const ImageData&)> onReady)
+    {
+        return m_impl->readbackFrame(std::move(onReady));
+    }
+
     Status RenderGraph::execute()
     {
-        return m_impl->execute();
+        // Pipeline creation, graph compilation and attachment allocation report failure by throwing internally
+        try
+        {
+            return m_impl->execute();
+        }
+        catch (const std::exception& error)
+        {
+            return Error{ErrorCode::Unknown, error.what()};
+        }
     }
 
     void RenderGraph::setView(const math::Mat4& view, const math::Mat4& projection)

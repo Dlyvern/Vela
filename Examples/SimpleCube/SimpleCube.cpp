@@ -10,6 +10,7 @@
 #include <Vela/Builtins/ForwardGraph.hpp>
 #include <Vela/Builtins/Shapes.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <vector>
@@ -46,7 +47,12 @@ int main()
 
     vela::graphics::RenderScene renderScene;
 
-    auto renderGraphResult = vela::builtins::forwardGraph(ctx, renderScene);
+    // 4x MSAA when the device has it. The scene pass resolves into the same "color" attachment either way
+    vela::builtins::ScenePassOptions sceneOptions{};
+    sceneOptions.clear = {0.1f, 0.2f, 0.4f, 1.0f};
+    sceneOptions.samples = std::min(4u, ctx.getDeviceInfo().maxMsaaSamples);
+
+    auto renderGraphResult = vela::builtins::forwardGraph(ctx, renderScene, sceneOptions);
 
     if (!renderGraphResult)
         return fail(renderGraphResult.error());

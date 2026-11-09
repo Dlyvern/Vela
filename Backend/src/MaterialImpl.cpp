@@ -126,6 +126,8 @@ namespace vela::backend
         m_pipelineDescription.depthWrite = m_materialDescription.renderState.depthWrite;
         m_pipelineDescription.depthCompare = toVkCompare(m_materialDescription.renderState.depthCompare);
         m_pipelineDescription.blend = m_materialDescription.renderState.blend;
+        m_pipelineDescription.depthBiasConstant = m_materialDescription.renderState.depthBiasConstant;
+        m_pipelineDescription.depthBiasSlope = m_materialDescription.renderState.depthBiasSlope;
     }
 
     uint32_t MaterialImpl::getPushConstantSize() const

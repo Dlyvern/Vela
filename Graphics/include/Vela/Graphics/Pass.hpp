@@ -6,6 +6,7 @@
 #include "Material.hpp"
 #include "DynamicBuffer.hpp"
 #include "ComputeProgram.hpp"
+#include "Sampler.hpp"
 
 #include "Vela/Math/Matrix.hpp"
 
@@ -36,6 +37,22 @@ namespace vela::graphics
 
         //Use if you want fixed-size attachment. Note that if attachment has size > 0, it won't be destroyed on swapchain resize
         Extent2D size{};
+
+        /*
+            Samples per pixel: 1 (the default) or a power of two up to core::DeviceInfo::maxMsaaSamples.
+            Every color and depth output of one pass must use the same count, and addPass() rejects a
+            count the device can't render. A multisampled attachment can't be a pass input or the present
+            source; resolve it and read the resolve target instead
+        */
+        uint32_t samples{1};
+
+        /*
+            Only for samples > 1: name of a single-sampled attachment Vela resolves this one into when the
+            pass ends (color: average of the samples, depth: sample zero). The resolve target has the same
+            format and size, counts as an output of this pass for ordering, and is what later passes list
+            as an input. Empty: no resolve; later passes can still load the multisampled attachment
+        */
+        std::string resolveTarget;
     };
 
     struct BufferSlot
@@ -95,6 +112,18 @@ namespace vela::graphics
             bindAttachment only works for attachments the pass lists in its inputs.
         */
         void bindAttachment(uint32_t slot, const std::string& attachmentName);
+
+        /*
+            Same as bindAttachment(slot, attachmentName), with the sampler the shader reads it through instead of
+            the default (clamp to edge; linear, or nearest for depth). Pass a SamplerDescription with a compareOp
+            to sample a depth attachment with hardware comparison (sampler2DShadow in GLSL), e.g. for PCF shadows.
+            Linear filtering of a depth format with comparison is supported by all desktop GPUs but optional in Vulkan.
+            slot:           pass-input slot (set 2 binding), below 4.
+            attachmentName: an attachment the pass lists in its inputs.
+            sampler:        how the attachment is sampled.
+        */
+        void bindAttachment(uint32_t slot, const std::string& attachmentName, const SamplerDescription& sampler);
+
         void bindTexture(uint32_t slot, const Texture& texture);
 
         void setConstants(const math::Mat4& value);

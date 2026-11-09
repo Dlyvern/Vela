@@ -36,6 +36,7 @@ namespace vela::windowing
         bool isMouseButtonDown(void* nativeWindow, core::MouseButton button) const override;
         void getCursorPosition(void* nativeWindow, double& x, double& y) const override;
         void setCursorMode(void* nativeWindow, core::CursorMode mode) override;
+        bool setRawMouseMotion(void* nativeWindow, bool enabled) override;
         void setCursorShape(void* nativeWindow, core::CursorShape shape) override;
 
         bool popEvent(void* nativeWindow, core::Event& event) override;

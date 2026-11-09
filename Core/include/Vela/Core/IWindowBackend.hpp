@@ -41,6 +41,15 @@ namespace vela::core
         virtual void setCursorMode(void* nativeWindow, CursorMode mode) = 0;
         virtual void setCursorShape(void* nativeWindow, CursorShape shape) = 0;
 
+        // Turns unaccelerated, unscaled mouse motion on or off while the cursor is CursorMode::Disabled.
+        // Returns: false if the platform has no raw motion (the default for backends that don't implement it).
+        virtual bool setRawMouseMotion(void* nativeWindow, bool enabled)
+        {
+            (void)nativeWindow;
+            (void)enabled;
+            return false;
+        }
+
         //TODO If a controller isn't detected properly, calling glfwUpdateGamepadMappings can add support for unmapped hardware
         //Gamepad
         virtual bool isGamepadButtonDown(int jid, GamepadButton button) const = 0;

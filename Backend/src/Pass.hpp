@@ -18,6 +18,7 @@ namespace vela::backend
         VmaAllocation allocation{VK_NULL_HANDLE};
         VkFormat format{VK_FORMAT_UNDEFINED};
         VkExtent2D extent{};
+        VkSampleCountFlagBits samples{VK_SAMPLE_COUNT_1_BIT};
         bool external{false};
         bool isFixedSize{false};
     };
@@ -43,6 +44,8 @@ namespace vela::backend
         VkClearValue clear{};
         float scale{1.0f};
         VkExtent2D size{};
+        VkSampleCountFlagBits samples{VK_SAMPLE_COUNT_1_BIT};
+        std::string resolveTarget;
     };
 
     enum class InputUsage : uint8_t { Sampled = 0, TransferSource };
@@ -91,6 +94,7 @@ namespace vela::backend
     {
         std::vector<VkFormat> colorFormats;
         VkFormat depthFormat{VK_FORMAT_UNDEFINED};
+        VkSampleCountFlagBits samples{VK_SAMPLE_COUNT_1_BIT};
     };
 
     [[nodiscard]] inline PassFormats formatsOf(const PassDeclaration& declaration)
@@ -103,6 +107,11 @@ namespace vela::backend
 
         if (declaration.depthOutput.has_value())
             formats.depthFormat = declaration.depthOutput->format;
+
+        if (!declaration.colorOutputs.empty())
+            formats.samples = declaration.colorOutputs.front().samples;
+        else if (declaration.depthOutput.has_value())
+            formats.samples = declaration.depthOutput->samples;
 
         return formats;
     }

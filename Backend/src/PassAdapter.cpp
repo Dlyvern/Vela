@@ -125,12 +125,34 @@ namespace vela::graphics
         m_graph->setConstantBytes(data, size);
     }
 
+    void PassRecorder::drawInstanced(const Mesh& mesh, const Material& material, uint32_t instanceCount,
+        uint32_t firstInstance)
+    {
+        if (!m_graph || instanceCount == 0)
+            return;
+
+        m_graph->drawMeshInstances(mesh, material, instanceCount, firstInstance);
+    }
+
     void PassRecorder::setScissor(int32_t x, int32_t y, uint32_t width, uint32_t height)
     {
         if (!m_graph)
             return;
 
         m_graph->setScissor(x, y, width, height);
+    }
+
+    void PassRecorder::clearDepth(int32_t x, int32_t y, uint32_t width, uint32_t height, float depth)
+    {
+        if (!m_graph)
+            return;
+
+        m_graph->clearDepth(x, y, width, height, depth);
+    }
+
+    bool PassRecorder::wasAttachmentReset(const std::string& attachmentName) const
+    {
+        return m_graph != nullptr && m_graph->wasAttachmentReset(attachmentName);
     }
 
     void PassRecorder::drawIndexed(uint32_t indexCount, uint32_t firstIndex, int32_t vertexOffset,

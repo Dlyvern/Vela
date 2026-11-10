@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <array>
 #include <functional>
 
@@ -66,6 +67,11 @@ namespace vela::backend
         void drawIndexed(uint32_t indexCount, uint32_t firstIndex, int32_t vertexOffset,
                  uint32_t instanceCount = 1, uint32_t firstInstance = 0);
         void setScissor(int32_t x, int32_t y, uint32_t width, uint32_t height);
+        void drawMeshInstances(const graphics::Mesh& mesh, const graphics::Material& material, uint32_t instanceCount,
+            uint32_t firstInstance);
+        // Clears a rectangle of the current pass's depth output inside its rendering scope
+        void clearDepth(int32_t x, int32_t y, uint32_t width, uint32_t height, float depth);
+        bool wasAttachmentReset(const std::string& attachmentName) const;
 
         void setPresentSource(std::string attachmentName);
         Status readbackFrame(std::function<void(const graphics::ImageData&)> onReady);
@@ -134,6 +140,8 @@ namespace vela::backend
 
         void bindMaterial(const graphics::Material& material);
         void pushConstants(const void* data, uint32_t size);
+        // Binds a mesh's vertex and index buffers unless they already are
+        void bindMesh(const graphics::Mesh& mesh);
         VkBuffer m_boundVertexBuffer{VK_NULL_HANDLE};
         VkBuffer m_boundIndexBuffer{VK_NULL_HANDLE};
         bool m_currentPassOpenedRendering{false};
@@ -160,6 +168,8 @@ namespace vela::backend
         void resetAllAttachmentLayouts();
         // Clears persistent attachments created since the last frame, so they never hold undefined contents
         void clearNewPersistentAttachments();
+        // Persistent attachments clearNewPersistentAttachments() cleared this frame
+        std::unordered_set<std::string> m_resetAttachments;
         // After a frame: what it wrote into each double-buffered attachment becomes what History inputs read
         void swapHistoryAttachments();
 

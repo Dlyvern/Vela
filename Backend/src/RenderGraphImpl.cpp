@@ -1184,6 +1184,8 @@ namespace vela::backend
         std::vector<VkImageMemoryBarrier2> barriers;
         std::vector<std::string> cleared;
 
+        m_resetAttachments.clear();
+
         for(const auto& [name, attachment] : m_attachments)
         {
             if(!attachment.persistent || !attachment.needsClear)
@@ -1221,6 +1223,7 @@ namespace vela::backend
             }
 
             attachment.needsClear = false;
+            m_resetAttachments.insert(name);
         }
     }
 
@@ -2188,7 +2191,37 @@ namespace vela::backend
             return;
 
         bindMaterial(material);
+        bindMesh(mesh);
 
+        pushConstants(constants, size);
+
+        flushDescriptors();
+
+        if (mesh.impl()->isIndexed())
+            vkCmdDrawIndexed(m_currentCommandBuffer, mesh.impl()->getIndexCount(), 1, 0, 0, 0);
+        else
+            vkCmdDraw(m_currentCommandBuffer, mesh.impl()->getVertexCount(), 1, 0, 0);
+    }
+
+    void RenderGraphImpl::drawMeshInstances(const graphics::Mesh& mesh, const graphics::Material& material,
+        uint32_t instanceCount, uint32_t firstInstance)
+    {
+        if(!m_isFrameValid || !m_currentRenderGraphPass)
+            return;
+
+        bindMaterial(material);
+        bindMesh(mesh);
+
+        flushDescriptors();
+
+        if (mesh.impl()->isIndexed())
+            vkCmdDrawIndexed(m_currentCommandBuffer, mesh.impl()->getIndexCount(), instanceCount, 0, 0, firstInstance);
+        else
+            vkCmdDraw(m_currentCommandBuffer, mesh.impl()->getVertexCount(), instanceCount, 0, firstInstance);
+    }
+
+    void RenderGraphImpl::bindMesh(const graphics::Mesh& mesh)
+    {
         if(VkBuffer vertexBuffer = mesh.impl()->getVertexBuffer(); vertexBuffer != m_boundVertexBuffer)
         {
             VkBuffer buffers[] = { vertexBuffer };
@@ -2198,24 +2231,54 @@ namespace vela::backend
             m_boundVertexBuffer = vertexBuffer;
         }
 
-        pushConstants(constants, size);
+        if (!mesh.impl()->isIndexed())
+            return;
 
-        flushDescriptors();
-
-        if (mesh.impl()->isIndexed())
+        if (VkBuffer indexBuffer = mesh.impl()->getIndexBuffer(); indexBuffer != m_boundIndexBuffer)
         {
-            if (VkBuffer indexBuffer = mesh.impl()->getIndexBuffer(); indexBuffer != m_boundIndexBuffer)
-            {
-                vkCmdBindIndexBuffer(m_currentCommandBuffer, indexBuffer, 0, mesh.impl()->getIndexType());
-                m_boundIndexBuffer = indexBuffer;
-            }
+            vkCmdBindIndexBuffer(m_currentCommandBuffer, indexBuffer, 0, mesh.impl()->getIndexType());
+            m_boundIndexBuffer = indexBuffer;
+        }
+    }
 
-            vkCmdDrawIndexed(m_currentCommandBuffer, mesh.impl()->getIndexCount(), 1, 0, 0, 0);
-        }
-        else
+    void RenderGraphImpl::clearDepth(int32_t x, int32_t y, uint32_t width, uint32_t height, float depth)
+    {
+        if(!m_isFrameValid || !m_currentRenderGraphPass || !m_currentPassOpenedRendering)
+            return;
+
+        if (!m_currentRenderGraphPass->declaration.depthOutput.has_value())
         {
-            vkCmdDraw(m_currentCommandBuffer, mesh.impl()->getVertexCount(), 1, 0, 0);
+            detail::LogLine(LogLevel::Error) << "clearDepth: pass " << m_currentRenderGraphPass->name
+                << " has no depth output\n";
+            return;
         }
+
+        // vkCmdClearAttachments must stay inside the render area
+        const VkExtent2D extent = passExtent(m_currentRenderGraphPass->declaration);
+        const int64_t left = std::clamp<int64_t>(x, 0, extent.width);
+        const int64_t top = std::clamp<int64_t>(y, 0, extent.height);
+        const int64_t right = std::clamp<int64_t>(static_cast<int64_t>(x) + width, left, extent.width);
+        const int64_t bottom = std::clamp<int64_t>(static_cast<int64_t>(y) + height, top, extent.height);
+
+        if (right == left || bottom == top)
+            return;
+
+        VkClearAttachment clear{};
+        clear.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        clear.clearValue.depthStencil = {depth, 0};
+
+        VkClearRect rect{};
+        rect.rect.offset = {static_cast<int32_t>(left), static_cast<int32_t>(top)};
+        rect.rect.extent = {static_cast<uint32_t>(right - left), static_cast<uint32_t>(bottom - top)};
+        rect.baseArrayLayer = 0;
+        rect.layerCount = 1;
+
+        vkCmdClearAttachments(m_currentCommandBuffer, 1, &clear, 1, &rect);
+    }
+
+    bool RenderGraphImpl::wasAttachmentReset(const std::string& attachmentName) const
+    {
+        return m_resetAttachments.contains(attachmentName);
     }
 
     RenderGraphImpl::~RenderGraphImpl()

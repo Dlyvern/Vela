@@ -148,7 +148,40 @@ namespace vela::graphics
                  uint32_t instanceCount = 1, uint32_t firstInstance = 0);
         void drawInstanced(uint32_t vertexCount, uint32_t instanceCount,
                  uint32_t firstVertex = 0, uint32_t firstInstance = 0);
+
+        /*
+            Draws `instanceCount` copies of a mesh in one call. The vertex shader tells them apart by
+            gl_InstanceIndex, which runs from firstInstance to firstInstance + instanceCount - 1, typically to
+            index per-instance data (say, model matrices) in a storage buffer of the material
+            (Material::setStorageBuffer). Push constants are not written: if the material has any, call
+            bind(material) and setConstants() first. Draws nothing when instanceCount is 0.
+            mesh:          the mesh to draw.
+            material:      the material to draw it with.
+            instanceCount: copies to draw.
+            firstInstance: gl_InstanceIndex of the first copy.
+        */
+        void drawInstanced(const Mesh& mesh, const Material& material, uint32_t instanceCount,
+                 uint32_t firstInstance = 0);
+
         void setScissor(int32_t x, int32_t y, uint32_t width, uint32_t height);
+
+        /*
+            Clears a rectangle of the pass's depth output to `depth`, leaving the rest of it as it is, e.g. to
+            re-render a few tiles of a persistent shadow atlas loaded with LoadOp::Load. Ignores the scissor.
+            Does nothing if the pass has no depth output; the rectangle is clamped to the attachment.
+            x, y:          top-left corner in texels.
+            width, height: size in texels.
+            depth:         the depth to write, 0 to 1.
+        */
+        void clearDepth(int32_t x, int32_t y, uint32_t width, uint32_t height, float depth = 1.0f);
+
+        /*
+            attachmentName: a persistent attachment (AttachmentSlot::persistent) of the graph.
+            Returns:        true if Vela (re)created and cleared it at the start of this frame (first use, a
+                            resize, a graph change), so whatever was cached in it before is gone. False for
+                            attachments that kept their contents, and for non-persistent or unknown ones.
+        */
+        [[nodiscard]] bool wasAttachmentReset(const std::string& attachmentName) const;
 
         [[nodiscard]] Extent2D extent() const;
 

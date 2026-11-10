@@ -214,6 +214,34 @@ An attachment read as History is double-buffered: writes go to one image, Histor
 the other, and they swap after each frame. A pass that *loads* it therefore sees the frame
 before last, so write every pixel. Persistent attachments are single-sampled.
 
+Persistent depth works the same way, which lets a pass cache work across frames - say, a
+shadow atlas whose tiles are re-rendered only when their light or casters change. Inside
+`record()`, `clearDepth(x, y, width, height)` clears just the region you are about to redraw,
+and `wasAttachmentReset(name)` tells you Vela (re)created the attachment this frame (first
+use, a resize, a graph change), so anything you cached in it is gone:
+
+```cpp
+depth.name = "shadowAtlas";
+depth.load = vela::graphics::LoadOp::Load;
+depth.persistent = true;
+
+// record():
+if (recorder.wasAttachmentReset("shadowAtlas"))
+    forgetCachedTiles();
+
+recorder.setScissor(x, y, size, size);
+recorder.clearDepth(x, y, size, size);
+// ... draw the tile's casters
+```
+
+### Instancing
+
+`drawInstanced(mesh, material, count, firstInstance)` draws `count` copies of a mesh in one
+call. The vertex shader tells them apart by `gl_InstanceIndex` (which starts at
+`firstInstance`), typically indexing a storage buffer of per-instance data that the material
+binds with `setStorageBuffer`. Push constants aren't written by this call; if the material
+has any, `bind(material)` and `setConstants(...)` first.
+
 ### Sampling attachments
 
 `bindAttachment(slot, name)` samples with clamp-to-edge and linear filtering (nearest for
